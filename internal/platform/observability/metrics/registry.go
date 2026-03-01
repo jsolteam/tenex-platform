@@ -1,8 +1,9 @@
 package metrics
 
-import "net/http"
-
-type LabelSet []Label
+import (
+	"context"
+	"net/http"
+)
 
 type Label struct {
 	Name  string
@@ -14,18 +15,16 @@ func L(name, value string) Label {
 }
 
 type Counter interface {
-	Inc(labels ...Label)
-	Add(delta float64, labels ...Label)
+	Inc(ctx context.Context, labels ...Label)
+	Add(ctx context.Context, delta int64, labels ...Label)
 }
 
 type Histogram interface {
-	Observe(value float64, labels ...Label)
+	Record(ctx context.Context, value float64, labels ...Label)
 }
 
 type Registry interface {
-	Counter(name, help string, labelNames ...string) (Counter, error)
-
-	Histogram(name, help string, buckets []float64, labelNames ...string) (Histogram, error)
-
+	Counter(name, description string, labelNames ...string) (Counter, error)
+	Histogram(name, description string, buckets []float64, labelNames ...string) (Histogram, error)
 	Handler() http.Handler
 }

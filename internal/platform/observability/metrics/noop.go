@@ -1,17 +1,18 @@
 package metrics
 
 import (
+	"context"
 	"net/http"
 )
 
 type noopCounter struct{}
 
-func (noopCounter) Inc(_ ...Label)            {}
-func (noopCounter) Add(_ float64, _ ...Label) {}
+func (noopCounter) Inc(_ context.Context, _ ...Label)          {}
+func (noopCounter) Add(_ context.Context, _ int64, _ ...Label) {}
 
 type noopHistogram struct{}
 
-func (noopHistogram) Observe(_ float64, _ ...Label) {}
+func (noopHistogram) Record(_ context.Context, _ float64, _ ...Label) {}
 
 type noopRegistry struct{}
 
