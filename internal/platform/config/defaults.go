@@ -10,6 +10,7 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("app.env", "local")
 	v.SetDefault("app.name", "tenex")
 	v.SetDefault("app.log_level", "info")
+	v.SetDefault("app.shutdown_timeout", 30*time.Second)
 
 	v.SetDefault("db.host", "localhost")
 	v.SetDefault("db.port", 5432)

@@ -7,6 +7,9 @@ local-down:
 dev-up:
 	docker compose -f deploy/compose/dev.yml up --build
 
+dev-down:
+	docker compose -f deploy/compose/dev.yml down
+
 prod-up:
 	@if [ -z "$$IMAGE_TAG" ]; then \
 		echo "ERROR: IMAGE_TAG is not set. Use: IMAGE_TAG=<sha> make prod-up"; \

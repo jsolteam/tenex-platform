@@ -9,6 +9,7 @@ var envBindings = []struct {
 	{"app.env", "APP_ENV"},
 	{"app.name", "APP_NAME"},
 	{"app.log_level", "APP_LOG_LEVEL"},
+	{"app.shutdown_timeout", "APP_SHUTDOWN_TIMEOUT"},
 	{"db.host", "DB_HOST"},
 	{"db.port", "DB_PORT"},
 	{"db.user", "DB_USER"},
@@ -29,8 +30,7 @@ var envBindings = []struct {
 
 type EnvProvider struct{}
 
-func (e *EnvProvider) Name() string { return "env" }
-
+func (e *EnvProvider) Name() string     { return "env" }
 func (e *EnvProvider) IsRequired() bool { return true }
 
 func (e *EnvProvider) Load() (map[string]interface{}, error) {

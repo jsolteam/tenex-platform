@@ -13,9 +13,10 @@ type AppConfig struct {
 }
 
 type App struct {
-	Env      string `mapstructure:"env"`
-	Name     string `mapstructure:"name"`
-	LogLevel string `mapstructure:"log_level"`
+	Env             string        `mapstructure:"env"`
+	Name            string        `mapstructure:"name"`
+	LogLevel        string        `mapstructure:"log_level"`
+	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
 }
 
 type DB struct {

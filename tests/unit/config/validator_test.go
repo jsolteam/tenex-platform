@@ -149,3 +149,74 @@ func assertError(t *testing.T, cfg *config.AppConfig, wantSubstr string) {
 		t.Errorf("expected error to contain %q, got: %v", wantSubstr, err)
 	}
 }
+
+func TestValidate_LogLevelInvalid(t *testing.T) {
+	cfg := validCfg()
+	cfg.App.LogLevel = "verbose"
+	err := config.Validate(cfg)
+	if err == nil {
+		t.Fatal("expected error for invalid log level, got nil")
+	}
+	if !strings.Contains(err.Error(), "log_level") {
+		t.Errorf("error should mention 'log_level', got: %v", err)
+	}
+}
+
+func TestValidate_LogLevelDebug(t *testing.T) {
+	cfg := validCfg()
+	cfg.App.LogLevel = "debug"
+	if err := config.Validate(cfg); err != nil {
+		t.Errorf("'debug' should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_LogLevelUppercase(t *testing.T) {
+	cfg := validCfg()
+	cfg.App.LogLevel = "INFO"
+	if err := config.Validate(cfg); err != nil {
+		t.Errorf("'INFO' should be valid (case-insensitive), got: %v", err)
+	}
+}
+
+func TestValidate_LogLevelWarn(t *testing.T) {
+	cfg := validCfg()
+	cfg.App.LogLevel = "warn"
+	if err := config.Validate(cfg); err != nil {
+		t.Errorf("'warn' should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_LogLevelError(t *testing.T) {
+	cfg := validCfg()
+	cfg.App.LogLevel = "error"
+	if err := config.Validate(cfg); err != nil {
+		t.Errorf("'error' should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_LogLevelEmpty(t *testing.T) {
+	cfg := validCfg()
+	cfg.App.LogLevel = ""
+	if err := config.Validate(cfg); err != nil {
+		t.Errorf("empty log_level should be valid (default applied), got: %v", err)
+	}
+}
+
+func TestValidate_LogLevelTrace_Invalid(t *testing.T) {
+	cfg := validCfg()
+	cfg.App.LogLevel = "trace"
+	err := config.Validate(cfg)
+	if err == nil {
+		t.Fatal("'trace' should be rejected (not in allowed set)")
+	}
+}
+
+func TestValidate_LogLevelAllValid(t *testing.T) {
+	for _, lvl := range []string{"debug", "info", "warn", "error", "DEBUG", "INFO", "WARN", "ERROR"} {
+		cfg := validCfg()
+		cfg.App.LogLevel = lvl
+		if err := config.Validate(cfg); err != nil {
+			t.Errorf("level %q should be valid, got: %v", lvl, err)
+		}
+	}
+}
