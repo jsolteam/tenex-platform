@@ -23,6 +23,7 @@ var envBindings = []struct {
 	{"s3.bucket", "S3_BUCKET"},
 	{"observability.otlp_endpoint", "OTEL_ENDPOINT"},
 	{"observability.loki_endpoint", "LOKI_ENDPOINT"},
+	{"observability.metrics_port", "METRICS_PORT"},
 	{"clients.telegram.token", "TELEGRAM_TOKEN"},
 	{"scheduler.max_retries", "SCHEDULER_MAX_RETRIES"},
 	{"scheduler.reminder_retry_interval", "SCHEDULER_RETRY_INTERVAL"},

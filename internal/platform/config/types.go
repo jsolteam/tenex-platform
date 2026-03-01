@@ -55,4 +55,5 @@ type Scheduler struct {
 type Observability struct {
 	OTLPEndpoint string `mapstructure:"otlp_endpoint"`
 	LokiEndpoint string `mapstructure:"loki_endpoint"`
+	MetricsPort  int    `mapstructure:"metrics_port"`
 }
