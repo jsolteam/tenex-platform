@@ -3,53 +3,55 @@ package config
 import "time"
 
 type AppConfig struct {
-	App           App
-	DB            DB
-	Redis         Redis
-	Clients       Clients
-	S3            S3
-	Scheduler     Scheduler
-	Observability Observability
+	App           App           `mapstructure:"app"`
+	DB            DB            `mapstructure:"db"`
+	Redis         Redis         `mapstructure:"redis"`
+	Clients       Clients       `mapstructure:"clients"`
+	S3            S3            `mapstructure:"s3"`
+	Scheduler     Scheduler     `mapstructure:"scheduler"`
+	Observability Observability `mapstructure:"observability"`
 }
 
 type App struct {
-	Env  string
-	Name string
+	Env      string `mapstructure:"env"`
+	Name     string `mapstructure:"name"`
+	LogLevel string `mapstructure:"log_level"`
 }
 
 type DB struct {
-	Host     string
-	Port     int
-	User     string
-	Password string
-	Name     string
-	SSLMode  string
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	User     string `mapstructure:"user"`
+	Password string `mapstructure:"password"`
+	Name     string `mapstructure:"name"`
+	SSLMode  string `mapstructure:"ssl_mode"`
 }
 
 type Redis struct {
-	Addr string
+	Addr string `mapstructure:"addr"`
 }
 
 type Clients struct {
-	Telegram Messenger
+	Telegram Messenger `mapstructure:"telegram"`
 }
 
 type Messenger struct {
-	Token string
+	Token string `mapstructure:"token"`
 }
 
 type S3 struct {
-	Endpoint string
-	Key      string
-	Secret   string
-	Bucket   string
+	Endpoint string `mapstructure:"endpoint"`
+	Key      string `mapstructure:"key"`
+	Secret   string `mapstructure:"secret"`
+	Bucket   string `mapstructure:"bucket"`
 }
 
 type Scheduler struct {
-	ReminderRetryInterval time.Duration
-	MaxRetries            int
+	ReminderRetryInterval time.Duration `mapstructure:"reminder_retry_interval"`
+	MaxRetries            int           `mapstructure:"max_retries"`
 }
 
 type Observability struct {
-	OTLPEndpoint string
+	OTLPEndpoint string `mapstructure:"otlp_endpoint"`
+	LokiEndpoint string `mapstructure:"loki_endpoint"`
 }

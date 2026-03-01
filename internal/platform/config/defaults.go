@@ -1,0 +1,24 @@
+package config
+
+import (
+	"time"
+
+	"github.com/spf13/viper"
+)
+
+func applyDefaults(v *viper.Viper) {
+	v.SetDefault("app.env", "local")
+	v.SetDefault("app.name", "tenex")
+	v.SetDefault("app.log_level", "info")
+
+	v.SetDefault("db.host", "localhost")
+	v.SetDefault("db.port", 5432)
+	v.SetDefault("db.ssl_mode", "disable")
+
+	v.SetDefault("redis.addr", "localhost:6379")
+
+	v.SetDefault("s3.endpoint", "localhost:9000")
+
+	v.SetDefault("scheduler.reminder_retry_interval", 30*time.Second)
+	v.SetDefault("scheduler.max_retries", 3)
+}
