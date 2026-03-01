@@ -8,4 +8,12 @@ dev-up:
 	docker compose -f deploy/compose/dev.yml up --build
 
 prod-up:
-	docker compose -f deploy/compose/prod.yml up -d
+	@if [ -z "$$IMAGE_TAG" ]; then \
+		echo "ERROR: IMAGE_TAG is not set. Use: IMAGE_TAG=<sha> make prod-up"; \
+		exit 1; \
+	fi
+	IMAGE_TAG=$$IMAGE_TAG docker compose -f deploy/compose/prod.yml pull
+	IMAGE_TAG=$$IMAGE_TAG docker compose -f deploy/compose/prod.yml up -d
+
+prod-down:
+	docker compose -f deploy/compose/prod.yml down
