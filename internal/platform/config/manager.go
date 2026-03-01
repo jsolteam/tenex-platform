@@ -20,8 +20,10 @@ type Manager struct {
 	loader    *Loader
 	listeners []listenerEntry
 	nextID    atomic.Uint64
+
 	reloadCh  chan struct{}
 	stopCh    chan struct{}
+	closeOnce sync.Once
 	wg        sync.WaitGroup
 }
 
@@ -37,7 +39,7 @@ func NewManager(loader *Loader) *Manager {
 }
 
 func (m *Manager) Close() {
-	close(m.stopCh)
+	m.closeOnce.Do(func() { close(m.stopCh) })
 	m.wg.Wait()
 }
 
@@ -55,6 +57,7 @@ func (m *Manager) AddListener(fn ChangeListener) (unsubscribe func()) {
 			if e.id == id {
 				last := len(m.listeners) - 1
 				m.listeners[i] = m.listeners[last]
+				m.listeners[last] = listenerEntry{}
 				m.listeners = m.listeners[:last]
 				return
 			}
@@ -84,30 +87,39 @@ func (m *Manager) notifyWorker() {
 	defer m.wg.Done()
 	var prev *AppConfig
 
+	deliver := func() {
+		current := m.cfg.Load()
+
+		m.mu.RLock()
+		listeners := make([]listenerEntry, len(m.listeners))
+		copy(listeners, m.listeners)
+		m.mu.RUnlock()
+
+		for _, e := range listeners {
+			fn := e.fn
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						fmt.Fprintf(os.Stderr, "[config] listener panic: %v\n", r)
+					}
+				}()
+				fn(prev, current)
+			}()
+		}
+		prev = current
+	}
+
 	for {
 		select {
 		case <-m.stopCh:
+			select {
+			case <-m.reloadCh:
+				deliver()
+			default:
+			}
 			return
 		case <-m.reloadCh:
-			current := m.cfg.Load()
-
-			m.mu.RLock()
-			listeners := make([]listenerEntry, len(m.listeners))
-			copy(listeners, m.listeners)
-			m.mu.RUnlock()
-
-			for _, e := range listeners {
-				fn := e.fn
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							fmt.Fprintf(os.Stderr, "[config] listener panic: %v\n", r)
-						}
-					}()
-					fn(prev, current)
-				}()
-			}
-			prev = current
+			deliver()
 		}
 	}
 }
