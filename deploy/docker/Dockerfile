@@ -1,7 +1,8 @@
-# ---------- build ----------
+# ---------- build stage ----------
 FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
+
 RUN apk add --no-cache git
 
 COPY go.mod go.sum ./
@@ -9,18 +10,26 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o tenex ./cmd/bot
-RUN CGO_ENABLED=0 GOOS=linux go build -o scheduler ./cmd/scheduler
-RUN CGO_ENABLED=0 GOOS=linux go build -o worker ./cmd/worker
+ARG BINARY=tenex
+RUN case "${BINARY}" in \
+        tenex|scheduler|worker) echo "Building binary: ${BINARY}" ;; \
+        *) echo "ERROR: invalid BINARY='${BINARY}'. Allowed: tenex, scheduler, worker" && exit 1 ;; \
+    esac
 
-# ---------- runtime ----------
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build \
+        -trimpath \
+        -ldflags="-s -w" \
+        -o /app/service \
+        ./cmd/${BINARY}
+
+# ---------- runtime stage ----------
 FROM alpine:3.19
 
 WORKDIR /app
-RUN apk add --no-cache ca-certificates
 
-COPY --from=builder /app/tenex .
-COPY --from=builder /app/scheduler .
-COPY --from=builder /app/worker .
+RUN apk add --no-cache ca-certificates tzdata
 
-CMD ["./tenex"]
+COPY --from=builder /app/service ./service
+
+ENTRYPOINT ["/app/service"]

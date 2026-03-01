@@ -1,31 +1,131 @@
 version: "3.9"
 
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+
 services:
   bot:
-    image: tenex/bot:latest
+    image: tenex/bot:${IMAGE_TAG:-latest}
     restart: always
-    env_file: ../../.env
+    environment:
+      - APP_ENV=${APP_ENV}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_NAME=${DB_NAME}
+      - REDIS_ADDR=${REDIS_ADDR}
+      - OTEL_ENDPOINT=${OTEL_ENDPOINT}
+      - LOKI_ENDPOINT=${LOKI_ENDPOINT}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
     depends_on:
-      - postgres
-      - redis
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    networks:
+      - frontend
+      - backend
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2.0"
 
   scheduler:
-    image: tenex/scheduler:latest
+    image: tenex/scheduler:${IMAGE_TAG:-latest}
     restart: always
+    environment:
+      - APP_ENV=${APP_ENV}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_NAME=${DB_NAME}
+      - REDIS_ADDR=${REDIS_ADDR}
+      - OTEL_ENDPOINT=${OTEL_ENDPOINT}
+      - LOKI_ENDPOINT=${LOKI_ENDPOINT}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    networks:
+      - backend
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
 
   worker:
-    image: tenex/worker:latest
+    image: tenex/worker:${IMAGE_TAG:-latest}
     restart: always
+    environment:
+      - APP_ENV=${APP_ENV}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_NAME=${DB_NAME}
+      - REDIS_ADDR=${REDIS_ADDR}
+      - OTEL_ENDPOINT=${OTEL_ENDPOINT}
+      - LOKI_ENDPOINT=${LOKI_ENDPOINT}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    networks:
+      - backend
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
 
   postgres:
     image: postgres:16
     restart: always
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_DB=${DB_NAME}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-tenex}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7
     restart: always
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
 volumes:
   postgres-data:

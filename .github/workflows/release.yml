@@ -10,6 +10,18 @@ on:
 jobs:
   docker:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: bot
+            binary: tenex
+            image: tenex/bot
+          - service: scheduler
+            binary: scheduler
+            image: tenex/scheduler
+          - service: worker
+            binary: worker
+            image: tenex/worker
 
     steps:
       - name: Checkout
@@ -21,12 +33,23 @@ jobs:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_PASS }}
 
-      - name: Build and push
+      - name: Extract version tag
+        id: meta
+        run: |
+          SHA_TAG="${{ matrix.image }}:${{ github.sha }}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            echo "tags=${SHA_TAG},${{ matrix.image }}:${VERSION}" >> $GITHUB_OUTPUT
+          else
+            echo "tags=${SHA_TAG}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push ${{ matrix.service }}
         uses: docker/build-push-action@v5
         with:
           context: .
           file: deploy/docker/Dockerfile
           push: true
-          tags: |
-            tenex/bot:latest
-            tenex/bot:${{ github.sha }}
+          build-args: |
+            BINARY=${{ matrix.binary }}
+          tags: ${{ steps.meta.outputs.tags }}
