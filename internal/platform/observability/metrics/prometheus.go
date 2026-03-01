@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -12,19 +13,19 @@ type prometheusCounter struct {
 	vec *prometheus.CounterVec
 }
 
-func (c *prometheusCounter) Inc(labels ...Label) {
+func (c *prometheusCounter) Inc(_ context.Context, labels ...Label) {
 	c.vec.With(toPromLabels(labels)).Inc()
 }
 
-func (c *prometheusCounter) Add(delta float64, labels ...Label) {
-	c.vec.With(toPromLabels(labels)).Add(delta)
+func (c *prometheusCounter) Add(_ context.Context, delta int64, labels ...Label) {
+	c.vec.With(toPromLabels(labels)).Add(float64(delta))
 }
 
 type prometheusHistogram struct {
 	vec *prometheus.HistogramVec
 }
 
-func (h *prometheusHistogram) Observe(value float64, labels ...Label) {
+func (h *prometheusHistogram) Record(_ context.Context, value float64, labels ...Label) {
 	h.vec.With(toPromLabels(labels)).Observe(value)
 }
 
@@ -38,7 +39,6 @@ func NewPrometheus() Registry {
 		prometheus.NewGoCollector(),
 		prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}),
 	)
-
 	return &prometheusRegistry{reg: reg}
 }
 
@@ -58,7 +58,6 @@ func (r *prometheusRegistry) Counter(name, help string, labelNames ...string) (C
 		}
 		return nil, fmt.Errorf("metrics: register counter %q: %w", name, err)
 	}
-
 	return &prometheusCounter{vec: vec}, nil
 }
 
@@ -83,7 +82,6 @@ func (r *prometheusRegistry) Histogram(name, help string, buckets []float64, lab
 		}
 		return nil, fmt.Errorf("metrics: register histogram %q: %w", name, err)
 	}
-
 	return &prometheusHistogram{vec: vec}, nil
 }
 

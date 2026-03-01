@@ -22,4 +22,6 @@ func applyDefaults(v *viper.Viper) {
 
 	v.SetDefault("scheduler.reminder_retry_interval", 30*time.Second)
 	v.SetDefault("scheduler.max_retries", 3)
+
+	v.SetDefault("observability.metrics_port", 9090)
 }

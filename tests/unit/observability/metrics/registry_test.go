@@ -14,6 +14,7 @@ import (
 	"github.com/jsol/tenex-platform/internal/platform/observability/metrics"
 )
 
+// freePort возвращает свободный TCP-порт на localhost.
 func freePort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -26,31 +27,35 @@ func freePort(t *testing.T) int {
 }
 
 func TestPrometheusRegistry_CounterInc(t *testing.T) {
+	ctx := context.Background()
 	reg := metrics.NewPrometheus()
 	c, err := reg.Counter("test_counter_inc", "test counter", metrics.LabelMessenger)
 	if err != nil {
 		t.Fatalf("Counter: %v", err)
 	}
-	c.Inc(metrics.L(metrics.LabelMessenger, "telegram"))
-	c.Inc(metrics.L(metrics.LabelMessenger, "telegram"))
+	c.Inc(ctx, metrics.L(metrics.LabelMessenger, "telegram"))
+	c.Inc(ctx, metrics.L(metrics.LabelMessenger, "telegram"))
 }
 
 func TestPrometheusRegistry_CounterAdd(t *testing.T) {
+	ctx := context.Background()
 	reg := metrics.NewPrometheus()
 	c, err := reg.Counter("test_counter_add", "test counter add", metrics.LabelStatus)
 	if err != nil {
 		t.Fatalf("Counter: %v", err)
 	}
-	c.Add(5, metrics.L(metrics.LabelStatus, "ok"))
+	c.Add(ctx, 5, metrics.L(metrics.LabelStatus, "ok"))
+	c.Add(ctx, int64(100), metrics.L(metrics.LabelStatus, "error"))
 }
 
-func TestPrometheusRegistry_HistogramObserve(t *testing.T) {
+func TestPrometheusRegistry_HistogramRecord(t *testing.T) {
+	ctx := context.Background()
 	reg := metrics.NewPrometheus()
-	h, err := reg.Histogram("test_hist_obs", "test histogram", nil, metrics.LabelHandler)
+	h, err := reg.Histogram("test_hist_record", "test histogram", nil, metrics.LabelHandler)
 	if err != nil {
 		t.Fatalf("Histogram: %v", err)
 	}
-	h.Observe(0.042, metrics.L(metrics.LabelHandler, "start"))
+	h.Record(ctx, 0.042, metrics.L(metrics.LabelHandler, "start"))
 }
 
 func TestPrometheusRegistry_NoDuplicatePanic(t *testing.T) {
@@ -60,6 +65,7 @@ func TestPrometheusRegistry_NoDuplicatePanic(t *testing.T) {
 		}
 	}()
 
+	ctx := context.Background()
 	reg := metrics.NewPrometheus()
 
 	c1, err := reg.Counter("tenex_dup_counter", "dup counter", metrics.LabelMessenger)
@@ -71,8 +77,8 @@ func TestPrometheusRegistry_NoDuplicatePanic(t *testing.T) {
 		t.Fatalf("second Counter (duplicate) must not error: %v", err)
 	}
 
-	c1.Inc(metrics.L(metrics.LabelMessenger, "telegram"))
-	c2.Inc(metrics.L(metrics.LabelMessenger, "telegram"))
+	c1.Inc(ctx, metrics.L(metrics.LabelMessenger, "telegram"))
+	c2.Inc(ctx, metrics.L(metrics.LabelMessenger, "telegram"))
 }
 
 func TestPrometheusRegistry_NoDuplicatePanic_Histogram(t *testing.T) {
@@ -82,6 +88,7 @@ func TestPrometheusRegistry_NoDuplicatePanic_Histogram(t *testing.T) {
 		}
 	}()
 
+	ctx := context.Background()
 	reg := metrics.NewPrometheus()
 	buckets := []float64{0.1, 0.5, 1.0}
 
@@ -94,18 +101,19 @@ func TestPrometheusRegistry_NoDuplicatePanic_Histogram(t *testing.T) {
 		t.Fatalf("second Histogram (duplicate): %v", err)
 	}
 
-	h1.Observe(0.1, metrics.L(metrics.LabelHandler, "a"))
-	h2.Observe(0.2, metrics.L(metrics.LabelHandler, "b"))
+	h1.Record(ctx, 0.1, metrics.L(metrics.LabelHandler, "a"))
+	h2.Record(ctx, 0.2, metrics.L(metrics.LabelHandler, "b"))
 }
 
 func TestPrometheusRegistry_HandlerOK(t *testing.T) {
+	ctx := context.Background()
 	reg := metrics.NewPrometheus()
 
 	c, err := reg.Counter("tenex_handler_test_total", "handler test", metrics.LabelStatus)
 	if err != nil {
 		t.Fatalf("Counter: %v", err)
 	}
-	c.Inc(metrics.L(metrics.LabelStatus, "ok"))
+	c.Inc(ctx, metrics.L(metrics.LabelStatus, "ok"))
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -114,7 +122,6 @@ func TestPrometheusRegistry_HandlerOK(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
 	}
-
 	body, _ := io.ReadAll(w.Result().Body)
 	if len(body) == 0 {
 		t.Fatal("empty body")
@@ -144,20 +151,21 @@ func TestNoopRegistry_NoPanic(t *testing.T) {
 		}
 	}()
 
+	ctx := context.Background()
 	reg := metrics.NewNoop()
 
 	c, err := reg.Counter("noop_c", "noop", metrics.LabelMessenger)
 	if err != nil {
 		t.Fatalf("noop Counter: %v", err)
 	}
-	c.Inc(metrics.L(metrics.LabelMessenger, "any"))
-	c.Add(99, metrics.L(metrics.LabelMessenger, "any"))
+	c.Inc(ctx, metrics.L(metrics.LabelMessenger, "any"))
+	c.Add(ctx, 99, metrics.L(metrics.LabelMessenger, "any"))
 
 	h, err := reg.Histogram("noop_h", "noop", nil, metrics.LabelHandler)
 	if err != nil {
 		t.Fatalf("noop Histogram: %v", err)
 	}
-	h.Observe(1.23, metrics.L(metrics.LabelHandler, "any"))
+	h.Record(ctx, 1.23, metrics.L(metrics.LabelHandler, "any"))
 
 	w := httptest.NewRecorder()
 	reg.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
@@ -213,57 +221,60 @@ func TestNewAppMetrics_AllInstruments(t *testing.T) {
 }
 
 func TestNewAppMetrics_AllInstrumentsUsable(t *testing.T) {
+	ctx := context.Background()
 	reg := metrics.NewPrometheus()
 	am, err := metrics.NewAppMetrics(reg)
 	if err != nil {
 		t.Fatalf("NewAppMetrics: %v", err)
 	}
-	am.UpdatesTotal.Inc(
+
+	am.UpdatesTotal.Inc(ctx,
 		metrics.L(metrics.LabelMessenger, "telegram"),
 		metrics.L(metrics.LabelStatus, "ok"),
 	)
-	am.UpdateProcessingDuration.Observe(0.05,
+	am.UpdateProcessingDuration.Record(ctx, 0.05,
 		metrics.L(metrics.LabelMessenger, "telegram"),
 		metrics.L(metrics.LabelHandler, "start"),
 	)
-	am.FSMTransitionsTotal.Inc(
+	am.FSMTransitionsTotal.Inc(ctx,
 		metrics.L(metrics.LabelState, "idle"),
 		metrics.L(metrics.LabelHandler, "on_message"),
 	)
-	am.RetryTotal.Inc(
+	am.RetryTotal.Add(ctx, 3,
 		metrics.L(metrics.LabelModule, "scheduler"),
 		metrics.L(metrics.LabelStatus, "retry"),
 	)
-	am.AdapterErrorsTotal.Inc(
+	am.AdapterErrorsTotal.Inc(ctx,
 		metrics.L(metrics.LabelMessenger, "telegram"),
 		metrics.L(metrics.LabelStatus, "error"),
 	)
 }
 
 func TestNewAppMetrics_AppearInHandler(t *testing.T) {
+	ctx := context.Background()
 	reg := metrics.NewPrometheus()
 	am, err := metrics.NewAppMetrics(reg)
 	if err != nil {
 		t.Fatalf("NewAppMetrics: %v", err)
 	}
 
-	am.UpdatesTotal.Inc(
+	am.UpdatesTotal.Inc(ctx,
 		metrics.L(metrics.LabelMessenger, "telegram"),
 		metrics.L(metrics.LabelStatus, "ok"),
 	)
-	am.UpdateProcessingDuration.Observe(0.01,
+	am.UpdateProcessingDuration.Record(ctx, 0.01,
 		metrics.L(metrics.LabelMessenger, "telegram"),
 		metrics.L(metrics.LabelHandler, "start"),
 	)
-	am.FSMTransitionsTotal.Inc(
+	am.FSMTransitionsTotal.Inc(ctx,
 		metrics.L(metrics.LabelState, "idle"),
 		metrics.L(metrics.LabelHandler, "on_message"),
 	)
-	am.RetryTotal.Inc(
+	am.RetryTotal.Inc(ctx,
 		metrics.L(metrics.LabelModule, "scheduler"),
 		metrics.L(metrics.LabelStatus, "retry"),
 	)
-	am.AdapterErrorsTotal.Inc(
+	am.AdapterErrorsTotal.Inc(ctx,
 		metrics.L(metrics.LabelMessenger, "telegram"),
 		metrics.L(metrics.LabelStatus, "error"),
 	)
@@ -286,6 +297,7 @@ func TestNewAppMetrics_AppearInHandler(t *testing.T) {
 }
 
 func TestNewAppMetrics_WithNoop(t *testing.T) {
+	ctx := context.Background()
 	reg := metrics.NewNoop()
 	am, err := metrics.NewAppMetrics(reg)
 	if err != nil {
@@ -294,11 +306,12 @@ func TestNewAppMetrics_WithNoop(t *testing.T) {
 	if am == nil {
 		t.Fatal("AppMetrics with noop is nil")
 	}
-	am.UpdatesTotal.Inc(metrics.L(metrics.LabelMessenger, "x"), metrics.L(metrics.LabelStatus, "y"))
-	am.AdapterErrorsTotal.Add(3, metrics.L(metrics.LabelMessenger, "x"), metrics.L(metrics.LabelStatus, "err"))
+	am.UpdatesTotal.Inc(ctx, metrics.L(metrics.LabelMessenger, "x"), metrics.L(metrics.LabelStatus, "y"))
+	am.AdapterErrorsTotal.Add(ctx, 3, metrics.L(metrics.LabelMessenger, "x"), metrics.L(metrics.LabelStatus, "err"))
 }
 
 func TestNewAppMetrics_IdempotentRegistration(t *testing.T) {
+	ctx := context.Background()
 	reg := metrics.NewPrometheus()
 	am1, err := metrics.NewAppMetrics(reg)
 	if err != nil {
@@ -308,8 +321,8 @@ func TestNewAppMetrics_IdempotentRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second NewAppMetrics (duplicate): %v", err)
 	}
-	am1.UpdatesTotal.Inc(metrics.L(metrics.LabelMessenger, "a"), metrics.L(metrics.LabelStatus, "ok"))
-	am2.UpdatesTotal.Inc(metrics.L(metrics.LabelMessenger, "b"), metrics.L(metrics.LabelStatus, "ok"))
+	am1.UpdatesTotal.Inc(ctx, metrics.L(metrics.LabelMessenger, "a"), metrics.L(metrics.LabelStatus, "ok"))
+	am2.UpdatesTotal.Inc(ctx, metrics.L(metrics.LabelMessenger, "b"), metrics.L(metrics.LabelStatus, "ok"))
 }
 
 func TestStartServer_ServesMetrics(t *testing.T) {
@@ -321,7 +334,6 @@ func TestStartServer_ServesMetrics(t *testing.T) {
 
 	shutdown := metrics.StartServer(ctx, port, reg.Handler())
 
-	// Retry loop — server needs a moment to bind.
 	url := fmt.Sprintf("http://127.0.0.1:%d/metrics", port)
 	var (
 		resp *http.Response
