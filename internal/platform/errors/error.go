@@ -15,10 +15,11 @@ const (
 )
 
 type AppError struct {
-	Code      string
+	Code      ErrorCode
 	Module    string
 	Severity  Severity
 	Retryable bool
+	Temporary bool
 	Cause     error
 }
 
@@ -31,16 +32,27 @@ func (e *AppError) Error() string {
 
 func (e *AppError) Unwrap() error { return e.Cause }
 
-func Wrap(err error, code, module string) *AppError {
+func Wrap(err error, code ErrorCode, module string) *AppError {
 	return &AppError{Code: code, Module: module, Severity: SeverityError, Cause: err}
 }
 
-func Retryable(err error, code, module string) *AppError {
-	return &AppError{Code: code, Module: module, Severity: SeverityWarn, Retryable: true, Cause: err}
+func Retryable(err error, code ErrorCode, module string) *AppError {
+	return &AppError{
+		Code:      code,
+		Module:    module,
+		Severity:  SeverityWarn,
+		Retryable: true,
+		Temporary: true,
+		Cause:     err,
+	}
 }
 
-func NewFatal(err error, code, module string) *AppError {
+func NewFatal(err error, code ErrorCode, module string) *AppError {
 	return &AppError{Code: code, Module: module, Severity: SeverityFatal, Cause: err}
+}
+
+func New(code ErrorCode, module string, cause error) *AppError {
+	return &AppError{Code: code, Module: module, Severity: SeverityError, Cause: cause}
 }
 
 func IsRetryable(err error) bool {
@@ -48,7 +60,7 @@ func IsRetryable(err error) bool {
 	return errors.As(err, &ae) && ae.Retryable
 }
 
-func CodeOf(err error) string {
+func CodeOf(err error) ErrorCode {
 	var ae *AppError
 	if errors.As(err, &ae) {
 		return ae.Code
