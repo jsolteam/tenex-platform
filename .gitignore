@@ -12,6 +12,9 @@ coverage.out
 *.cover
 *.coverprofile
 
+dump.ps1
+tenex_full_source.txt
+
 go.work
 go.work.sum
 
