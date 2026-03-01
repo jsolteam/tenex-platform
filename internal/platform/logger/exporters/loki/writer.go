@@ -80,15 +80,15 @@ func (w *Writer) Run(interval time.Duration, stop <-chan struct{}) {
 	for {
 		select {
 		case <-t.C:
-			w.flush()
+			w.flush(stop)
 		case <-stop:
-			w.flush()
+			w.flush(stop)
 			return
 		}
 	}
 }
 
-func (w *Writer) flush() {
+func (w *Writer) flush(stop <-chan struct{}) {
 	w.mu.Lock()
 	if len(w.batch) == 0 {
 		w.mu.Unlock()
@@ -105,7 +105,7 @@ func (w *Writer) flush() {
 		if end > len(snapshot) {
 			end = len(snapshot)
 		}
-		if err := w.pushWithRetry(snapshot[i:end]); err != nil {
+		if err := w.pushWithRetry(snapshot[i:end], stop); err != nil {
 			failed = append(failed, snapshot[i:end]...)
 		}
 	}
@@ -125,20 +125,28 @@ func (w *Writer) flush() {
 }
 
 func (w *Writer) jitter(delay time.Duration) time.Duration {
+	if delay/5 <= 0 {
+		return 0
+	}
 	w.rngMu.Lock()
 	n := w.rng.Int63n(int64(delay / 5))
 	w.rngMu.Unlock()
 	return time.Duration(n)
 }
 
-func (w *Writer) pushWithRetry(chunk []entry) error {
+func (w *Writer) pushWithRetry(chunk []entry, stop <-chan struct{}) error {
 	body := w.buildPayload(chunk)
 	delay := retryBaseDelay
 
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
-			time.Sleep(delay + w.jitter(delay))
+			sleep := delay + w.jitter(delay)
+			select {
+			case <-time.After(sleep):
+			case <-stop:
+				return lastErr
+			}
 			delay *= 2
 			if delay > retryMaxDelay {
 				delay = retryMaxDelay

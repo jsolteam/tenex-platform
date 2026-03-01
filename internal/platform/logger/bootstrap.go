@@ -17,7 +17,7 @@ type loggerSnapshot struct {
 	logger  *logcore.Logger
 	cleanup func() error
 	stop    func()
-	atom    zap.AtomicLevel
+	atom    *zap.AtomicLevel
 }
 
 type loggerState struct {
@@ -30,6 +30,7 @@ func (s *loggerState) update(next *loggerSnapshot) *loggerSnapshot {
 	defer s.mu.Unlock()
 	old := s.snap
 	s.snap = next
+	facade.Init(next.logger)
 	return old
 }
 
@@ -64,36 +65,43 @@ func shutdownSnapshot(snap *loggerSnapshot) error {
 
 func Bootstrap(mgr *cfg.Manager) (func() error, error) {
 	appCfg := mgr.Get()
+
 	snap, err := buildSnapshot(appCfg)
 	if err != nil {
 		return nil, fmt.Errorf("logger build: %w", err)
 	}
+
 	state := &loggerState{}
 	state.update(snap)
-	facade.Init(snap.logger)
+
 	unsubscribe := mgr.AddListener(func(old, newCfg *cfg.AppConfig) {
 		levelChanged := old == nil || old.App.LogLevel != newCfg.App.LogLevel
 		lokiChanged := old == nil || old.Observability.LokiEndpoint != newCfg.Observability.LokiEndpoint
+
 		if levelChanged && !lokiChanged {
 			state.setLevel(logcore.ParseLevel(newCfg.App.LogLevel))
 			return
 		}
+
 		if !levelChanged && !lokiChanged {
 			return
 		}
+
 		next, err := buildSnapshot(newCfg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[logger] rebuild failed: %v\n", err)
 			return
 		}
+
 		old2 := state.update(next)
-		facade.Init(next.logger)
+
 		go func() {
 			if err := shutdownSnapshot(old2); err != nil {
-				fmt.Fprintf(os.Stderr, "[logger] old snapshot shutdown error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "[logger] old snapshot shutdown: %v\n", err)
 			}
 		}()
 	})
+
 	return func() error {
 		unsubscribe()
 		return state.shutdown()
@@ -103,10 +111,20 @@ func Bootstrap(mgr *cfg.Manager) (func() error, error) {
 func buildSnapshot(appCfg *cfg.AppConfig) (*loggerSnapshot, error) {
 	level := logcore.ParseLevel(appCfg.App.LogLevel)
 	atom := zap.NewAtomicLevelAt(level)
+	atomPtr := &atom
+
 	var extraCores []zapcore.Core
 	stop := func() {}
+
 	if appCfg.Observability.LokiEndpoint != "" {
-		lokiWriter := loki.NewWriter(appCfg.Observability.LokiEndpoint, loki.Labels{"app": appCfg.App.Name, "env": appCfg.App.Env})
+		lokiWriter := loki.NewWriter(
+			appCfg.Observability.LokiEndpoint,
+			loki.Labels{
+				"app": appCfg.App.Name,
+				"env": appCfg.App.Env,
+			},
+		)
+
 		stopCh := make(chan struct{})
 		runDone := make(chan struct{})
 
@@ -121,12 +139,25 @@ func buildSnapshot(appCfg *cfg.AppConfig) (*loggerSnapshot, error) {
 			lokiWriter.Run(0, stopCh)
 		}()
 
-		extraCores = append(extraCores, loki.NewCore(lokiWriter, &atom))
+		extraCores = append(extraCores, loki.NewCore(lokiWriter, atomPtr))
 	}
+
 	l, cleanup := logcore.Build(logcore.BuildOptions{
-		AtomicLevel: atom, ExtraCores: extraCores,
-		Async: true, Sampling: appCfg.App.Env != "local",
+		AtomicLevel: atom,
+		ExtraCores:  extraCores,
+		Async:       true,
+		Sampling:    appCfg.App.Env != "local",
 	})
-	l = l.With(zap.String("service", appCfg.App.Name), zap.String("env", appCfg.App.Env))
-	return &loggerSnapshot{logger: l, cleanup: cleanup, stop: stop, atom: atom}, nil
+
+	l = l.With(
+		zap.String("service", appCfg.App.Name),
+		zap.String("env", appCfg.App.Env),
+	)
+
+	return &loggerSnapshot{
+		logger:  l,
+		cleanup: cleanup,
+		stop:    stop,
+		atom:    atomPtr,
+	}, nil
 }
