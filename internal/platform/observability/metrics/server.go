@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func StartServer(ctx context.Context, port int, h http.Handler) func(context.Context) error {
+func StartServer(_ context.Context, port int, h http.Handler) func(context.Context) error {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", h)
 
@@ -19,23 +19,9 @@ func StartServer(ctx context.Context, port int, h http.Handler) func(context.Con
 		IdleTimeout:  60 * time.Second,
 	}
 
-	serveErr := make(chan error, 1)
-
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			serveErr <- err
-		} else {
-			serveErr <- nil
-		}
-	}()
-
-	go func() {
-		select {
-		case <-ctx.Done():
-			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(shutCtx)
-		case <-serveErr:
+			fmt.Printf("[metrics] server error: %v\n", err)
 		}
 	}()
 
