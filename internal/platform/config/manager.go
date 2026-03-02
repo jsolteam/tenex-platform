@@ -15,33 +15,19 @@ type listenerEntry struct {
 }
 
 type Manager struct {
-	mu        sync.RWMutex
+	mu        sync.Mutex
 	cfg       atomic.Pointer[AppConfig]
+	prev      *AppConfig
 	loader    *Loader
 	listeners []listenerEntry
 	nextID    atomic.Uint64
-
-	reloadCh  chan struct{}
-	stopCh    chan struct{}
-	closeOnce sync.Once
-	wg        sync.WaitGroup
 }
 
 func NewManager(loader *Loader) *Manager {
-	m := &Manager{
-		loader:   loader,
-		reloadCh: make(chan struct{}, 1),
-		stopCh:   make(chan struct{}),
-	}
-	m.wg.Add(1)
-	go m.notifyWorker()
-	return m
+	return &Manager{loader: loader}
 }
 
-func (m *Manager) Close() {
-	m.closeOnce.Do(func() { close(m.stopCh) })
-	m.wg.Wait()
-}
+func (m *Manager) Close() {}
 
 func (m *Manager) AddListener(fn ChangeListener) (unsubscribe func()) {
 	id := m.nextID.Add(1)
@@ -70,56 +56,31 @@ func (m *Manager) Load() error {
 	if err != nil {
 		return err
 	}
+
+	m.mu.Lock()
+	prev := m.prev
+	m.prev = cfg
+	snapshot := make([]listenerEntry, len(m.listeners))
+	copy(snapshot, m.listeners)
+	m.mu.Unlock()
+
 	m.cfg.Store(cfg)
 
-	select {
-	case m.reloadCh <- struct{}{}:
-	default:
+	for _, e := range snapshot {
+		fn := e.fn
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintf(os.Stderr, "[config] listener panic: %v\n", r)
+				}
+			}()
+			fn(prev, cfg)
+		}()
 	}
+
 	return nil
 }
 
 func (m *Manager) Get() *AppConfig {
 	return m.cfg.Load()
-}
-
-func (m *Manager) notifyWorker() {
-	defer m.wg.Done()
-	var prev *AppConfig
-
-	deliver := func() {
-		current := m.cfg.Load()
-
-		m.mu.RLock()
-		listeners := make([]listenerEntry, len(m.listeners))
-		copy(listeners, m.listeners)
-		m.mu.RUnlock()
-
-		for _, e := range listeners {
-			fn := e.fn
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						fmt.Fprintf(os.Stderr, "[config] listener panic: %v\n", r)
-					}
-				}()
-				fn(prev, current)
-			}()
-		}
-		prev = current
-	}
-
-	for {
-		select {
-		case <-m.stopCh:
-			select {
-			case <-m.reloadCh:
-				deliver()
-			default:
-			}
-			return
-		case <-m.reloadCh:
-			deliver()
-		}
-	}
 }
