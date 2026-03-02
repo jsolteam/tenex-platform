@@ -1,16 +1,37 @@
 version: "3.9"
 
-# dev.yml extends local.yml for all shared services and adds the full
-# observability stack (Prometheus, Grafana, Loki, Tempo).
-#
-# Usage: make dev-up
-
 services:
+  # ─── Application services ─────────────────────────────────────────────────
   bot:
     extends:
       file: local.yml
       service: bot
+    depends_on:
+      postgres:       { condition: service_healthy }
+      redis:          { condition: service_healthy }
+      minio:          { condition: service_healthy }
+      otel-collector: { condition: service_healthy }
+      loki:           { condition: service_healthy }
 
+  scheduler:
+    extends:
+      file: local.yml
+      service: scheduler
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      loki:     { condition: service_healthy }
+
+  worker:
+    extends:
+      file: local.yml
+      service: worker
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      loki:     { condition: service_healthy }
+
+  # ─── Infrastructure ───────────────────────────────────────────────────────
   postgres:
     extends:
       file: local.yml
@@ -26,8 +47,8 @@ services:
       file: local.yml
       service: minio
 
+  # ─── Observability: Loki ─────────────────────────────────────────────────
   loki:
-    # Explicitly configured — consistent with local.yml.
     image: grafana/loki:2.9.0
     ports:
       - "3100:3100"
@@ -39,46 +60,79 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
+  # ─── Observability: Tempo ────────────────────────────────────────────────
   tempo:
     image: grafana/tempo:latest
     command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ../observability/tempo-local.yaml:/etc/tempo.yaml:ro
     ports:
-      - "3200:3200"
+      - "3200:3200"   # HTTP API / UI
+      - "4417:4317"   # OTLP gRPC
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3200/ready || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
 
+  # ─── Observability: OpenTelemetry Collector ──────────────────────────────
   otel-collector:
-    extends:
-      file: local.yml
-      service: otel-collector
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ../observability/otel-collector.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC — сервисы → collector
+      - "4318:4318"   # OTLP HTTP
+      - "13133:13133" # health_check
     depends_on:
       tempo: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:13133 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
+  # ─── Observability: Prometheus ───────────────────────────────────────────
   prometheus:
     image: prom/prometheus:latest
     volumes:
       - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "9090:9090"
+      - "9091:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--web.enable-remote-write-receiver"
+    depends_on:
+      bot:       { condition: service_started }
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
+  # ─── Observability: Grafana ──────────────────────────────────────────────
   grafana:
     image: grafana/grafana:latest
     ports:
       - "3000:3000"
     environment:
+      # Анонимный доступ с правами Admin — только для локальной разработки
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      # Корреляция трейсов <-> логов
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor traceToMetrics
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       prometheus: { condition: service_healthy }
       loki:       { condition: service_healthy }
@@ -88,3 +142,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
+
+volumes:
+  postgres-data:
+  minio-data:

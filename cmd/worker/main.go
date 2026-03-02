@@ -32,7 +32,7 @@ func main() {
 	l.Info("worker: platform started")
 
 	sm := shutdown.New(cfgComp.Get().App.ShutdownTimeout)
-	
+
 	sm.Register("updates", func(_ context.Context) error {
 		l.Info("worker: stop accepting new tasks")
 		return nil

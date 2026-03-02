@@ -1,7 +1,30 @@
 global:
   scrape_interval: 5s
+  evaluation_interval: 5s
 
 scrape_configs:
-  - job_name: tenex
+  # Bot service — метрики Prometheus через /metrics
+  - job_name: tenex_bot
     static_configs:
-      - targets: ["bot:8080"]
+      - targets: ["bot:9090"]
+    labels:
+      service: bot
+
+  # Scheduler service
+  - job_name: tenex_scheduler
+    static_configs:
+      - targets: ["scheduler:9090"]
+    labels:
+      service: scheduler
+
+  # Worker service
+  - job_name: tenex_worker
+    static_configs:
+      - targets: ["worker:9090"]
+    labels:
+      service: worker
+
+  # Сам Prometheus — self-monitoring
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
