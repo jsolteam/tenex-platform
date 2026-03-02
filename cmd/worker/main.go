@@ -3,18 +3,17 @@ package main
 import (
 	"context"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/jsol/tenex-platform/internal/platform/container"
 	"github.com/jsol/tenex-platform/internal/platform/container/components"
+	apperrors "github.com/jsol/tenex-platform/internal/platform/errors"
 	"github.com/jsol/tenex-platform/internal/platform/logger/facade"
+	"github.com/jsol/tenex-platform/internal/platform/shutdown"
 	"go.uber.org/zap"
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
+	ctx := context.Background()
 
 	cfgComp := components.NewConfig(os.Getenv("CONFIG_FILE"))
 
@@ -25,24 +24,41 @@ func main() {
 	c.Register("logger", components.NewLogger(cfgComp))
 
 	if err := c.Start(ctx); err != nil {
-		_, _ = os.Stderr.WriteString("worker: container start failed: " + err.Error() + "\n")
+		_, _ = os.Stderr.WriteString("worker: platform start failed: " + err.Error() + "\n")
 		os.Exit(1)
 	}
 
-	facade.L().Info("worker: started")
+	l := facade.L()
+	l.Info("worker: platform started")
 
-	<-ctx.Done()
+	sm := shutdown.New(cfgComp.Get().App.ShutdownTimeout)
+	
+	sm.Register("updates", func(_ context.Context) error {
+		l.Info("worker: stop accepting new tasks")
+		return nil
+	})
 
-	facade.L().Info("worker: shutting down")
+	sm.Register("workers", func(_ context.Context) error {
+		l.Info("worker: finish in-flight tasks")
+		return nil
+	})
 
-	shutdownTimeout := cfgComp.Get().App.ShutdownTimeout
-	shutCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
+	sm.Register("platform", func(shutCtx context.Context) error {
+		l.Info("worker: flushing platform components")
 
-	if err := c.Stop(shutCtx); err != nil {
-		facade.L().Error("worker: shutdown error", zap.Error(err))
+		if err := c.Stop(shutCtx); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "worker.shutdown.platform")
+		}
+		return nil
+	})
+
+	if err := sm.Wait(ctx); err != nil {
+		l.Error("worker: shutdown error",
+			zap.Error(err),
+			zap.String("code", string(apperrors.CodeOf(err))),
+		)
 		os.Exit(1)
 	}
 
-	facade.L().Info("worker: shutdown complete")
+	l.Info("worker: shutdown complete")
 }
