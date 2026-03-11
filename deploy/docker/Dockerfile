@@ -12,7 +12,7 @@ COPY . .
 
 ARG BINARY=tenex
 RUN case "${BINARY}" in \
-        tenex|scheduler|worker) echo "Building binary: ${BINARY}" ;; \
+        bot|tenex|scheduler|worker) echo "Building binary: ${BINARY}" ;; \
         *) echo "ERROR: invalid BINARY='${BINARY}'. Allowed: tenex, scheduler, worker" && exit 1 ;; \
     esac
 

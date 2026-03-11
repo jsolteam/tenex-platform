@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	cfg "github.com/jsol/tenex-platform/internal/platform/config"
+	apperrors "github.com/jsol/tenex-platform/internal/platform/errors"
 	logcore "github.com/jsol/tenex-platform/internal/platform/logger/core"
 	"github.com/jsol/tenex-platform/internal/platform/logger/exporters/loki"
 	"github.com/jsol/tenex-platform/internal/platform/logger/facade"
@@ -68,7 +69,7 @@ func Bootstrap(mgr *cfg.Manager) (func() error, error) {
 
 	snap, err := buildSnapshot(appCfg)
 	if err != nil {
-		return nil, fmt.Errorf("logger build: %w", err)
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "logger.bootstrap")
 	}
 
 	state := &loggerState{}
@@ -87,9 +88,9 @@ func Bootstrap(mgr *cfg.Manager) (func() error, error) {
 			return
 		}
 
-		next, err := buildSnapshot(newCfg)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[logger] rebuild failed: %v\n", err)
+		next, buildErr := buildSnapshot(newCfg)
+		if buildErr != nil {
+			fmt.Fprintf(os.Stderr, "[logger] rebuild failed: %v\n", buildErr)
 			return
 		}
 
@@ -97,14 +98,19 @@ func Bootstrap(mgr *cfg.Manager) (func() error, error) {
 
 		go func() {
 			if err := shutdownSnapshot(old2); err != nil {
-				fmt.Fprintf(os.Stderr, "[logger] old snapshot shutdown: %v\n", err)
+				facade.L().Error("old logger snapshot shutdown error",
+					zap.Error(apperrors.Wrap(err, apperrors.ErrInternal, "logger.snapshot")),
+				)
 			}
 		}()
 	})
 
 	return func() error {
 		unsubscribe()
-		return state.shutdown()
+		if err := state.shutdown(); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "logger.shutdown")
+		}
+		return nil
 	}, nil
 }
 

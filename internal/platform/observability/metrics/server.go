@@ -19,27 +19,35 @@ func StartServer(ctx context.Context, port int, h http.Handler) func(context.Con
 		IdleTimeout:  60 * time.Second,
 	}
 
-	serveErr := make(chan error, 1)
+	ready := make(chan error, 1)
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			serveErr <- err
-		} else {
-			serveErr <- nil
+		fmt.Printf("[metrics] server starting on %s\n", srv.Addr)
+		err := srv.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			fmt.Printf("[metrics] server error: %v\n", err)
+			select {
+			case ready <- err:
+			default:
+			}
 		}
 	}()
 
-	go func() {
-		select {
-		case <-ctx.Done():
-			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(shutCtx)
-		case <-serveErr:
+	select {
+	case err := <-ready:
+		if err != nil {
+			fmt.Printf("[metrics] failed to start server: %v\n", err)
+			return func(context.Context) error { return err }
 		}
-	}()
+	case <-time.After(2 * time.Second):
+		fmt.Printf("[metrics] server started successfully on %s\n", srv.Addr)
+	case <-ctx.Done():
+		_ = srv.Close()
+		return func(context.Context) error { return ctx.Err() }
+	}
 
 	return func(shutdownCtx context.Context) error {
+		fmt.Printf("[metrics] shutting down server on %s\n", srv.Addr)
 		return srv.Shutdown(shutdownCtx)
 	}
 }

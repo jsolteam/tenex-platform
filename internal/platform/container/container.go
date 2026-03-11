@@ -24,6 +24,15 @@ func (c *Container) Register(name string, comp Component) {
 	c.entries = append(c.entries, entry{name: name, component: comp})
 }
 
+func (c *Container) Get(name string) Component {
+	for _, e := range c.entries {
+		if e.name == name {
+			return e.component
+		}
+	}
+	return nil
+}
+
 func (c *Container) Start(ctx context.Context) error {
 	for i, e := range c.entries {
 		if err := e.component.Start(ctx); err != nil {

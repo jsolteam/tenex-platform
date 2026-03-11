@@ -3,18 +3,17 @@ package main
 import (
 	"context"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/jsol/tenex-platform/internal/platform/container"
 	"github.com/jsol/tenex-platform/internal/platform/container/components"
+	apperrors "github.com/jsol/tenex-platform/internal/platform/errors"
 	"github.com/jsol/tenex-platform/internal/platform/logger/facade"
+	"github.com/jsol/tenex-platform/internal/platform/shutdown"
 	"go.uber.org/zap"
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
+	ctx := context.Background()
 
 	cfgComp := components.NewConfig(os.Getenv("CONFIG_FILE"))
 
@@ -25,24 +24,41 @@ func main() {
 	c.Register("logger", components.NewLogger(cfgComp))
 
 	if err := c.Start(ctx); err != nil {
-		_, _ = os.Stderr.WriteString("bot: container start failed: " + err.Error() + "\n")
+		_, _ = os.Stderr.WriteString("bot: platform start failed: " + err.Error() + "\n")
 		os.Exit(1)
 	}
 
-	facade.L().Info("bot: started")
+	l := facade.L()
+	l.Info("bot: platform started")
 
-	<-ctx.Done()
+	sm := shutdown.New(cfgComp.Get().App.ShutdownTimeout)
 
-	facade.L().Info("bot: shutting down")
+	sm.Register("updates", func(_ context.Context) error {
+		l.Info("bot: stop accepting updates")
+		return nil
+	})
 
-	shutdownTimeout := cfgComp.Get().App.ShutdownTimeout
-	shutCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
+	sm.Register("workers", func(_ context.Context) error {
+		l.Info("bot: stop workers")
+		return nil
+	})
 
-	if err := c.Stop(shutCtx); err != nil {
-		facade.L().Error("bot: shutdown error", zap.Error(err))
+	sm.Register("platform", func(shutCtx context.Context) error {
+		l.Info("bot: flushing platform components")
+
+		if err := c.Stop(shutCtx); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "bot.shutdown.platform")
+		}
+		return nil
+	})
+
+	if err := sm.Wait(ctx); err != nil {
+		l.Error("bot: shutdown error",
+			zap.Error(err),
+			zap.String("code", string(apperrors.CodeOf(err))),
+		)
 		os.Exit(1)
 	}
 
-	facade.L().Info("bot: shutdown complete")
+	l.Info("bot: shutdown complete")
 }
