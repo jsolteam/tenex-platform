@@ -110,18 +110,34 @@ func (w *Writer) flush(stop <-chan struct{}) {
 		}
 	}
 
-	if len(failed) > 0 {
-		w.mu.Lock()
-		combined := make([]entry, 0, len(failed)+len(w.batch))
-		combined = append(combined, failed...)
-		combined = append(combined, w.batch...)
-		if len(combined) > maxBatchSize {
-			combined = combined[:maxBatchSize]
-		}
-		w.batch = combined
-		w.mu.Unlock()
-		fmt.Fprintf(os.Stderr, "[loki] %d entries re-queued after push failure\n", len(failed))
+	if len(failed) == 0 {
+		return
 	}
+
+	w.mu.Lock()
+	capacity := maxBatchSize - len(failed)
+	newEntries := w.batch
+	if capacity <= 0 {
+		newEntries = nil
+		n := int64(-capacity) + int64(len(w.batch))
+		if n > 0 {
+			w.droppedCount.Add(n)
+			fmt.Fprintf(os.Stderr, "[loki] %d new entries dropped while requeueing failed ones\n", n)
+		}
+	} else if len(newEntries) > capacity {
+		dropped := int64(len(newEntries) - capacity)
+		w.droppedCount.Add(dropped)
+		fmt.Fprintf(os.Stderr, "[loki] %d new entries dropped while requeueing failed ones\n", dropped)
+		newEntries = newEntries[:capacity]
+	}
+
+	combined := make([]entry, 0, len(failed)+len(newEntries))
+	combined = append(combined, failed...)
+	combined = append(combined, newEntries...)
+	w.batch = combined
+	w.mu.Unlock()
+
+	fmt.Fprintf(os.Stderr, "[loki] %d entries re-queued after push failure\n", len(failed))
 }
 
 func (w *Writer) jitter(delay time.Duration) time.Duration {

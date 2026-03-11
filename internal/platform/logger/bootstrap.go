@@ -22,8 +22,9 @@ type loggerSnapshot struct {
 }
 
 type loggerState struct {
-	mu   sync.Mutex
-	snap *loggerSnapshot
+	mu         sync.Mutex
+	snap       *loggerSnapshot
+	shutdownWg sync.WaitGroup
 }
 
 func (s *loggerState) update(next *loggerSnapshot) *loggerSnapshot {
@@ -39,6 +40,8 @@ func (s *loggerState) shutdown() error {
 	s.mu.Lock()
 	snap := s.snap
 	s.mu.Unlock()
+	s.shutdownWg.Wait()
+
 	return shutdownSnapshot(snap)
 }
 
@@ -48,6 +51,22 @@ func (s *loggerState) setLevel(level zapcore.Level) {
 	if s.snap != nil {
 		s.snap.atom.SetLevel(level)
 	}
+}
+
+func (s *loggerState) replaceSnapshot(next *loggerSnapshot) {
+	old := s.update(next)
+	if old == nil {
+		return
+	}
+	s.shutdownWg.Add(1)
+	go func() {
+		defer s.shutdownWg.Done()
+		if err := shutdownSnapshot(old); err != nil {
+			facade.L().Error("old logger snapshot shutdown error",
+				zap.Error(apperrors.Wrap(err, apperrors.ErrInternal, "logger.snapshot")),
+			)
+		}
+	}()
 }
 
 func shutdownSnapshot(snap *loggerSnapshot) error {
@@ -94,15 +113,7 @@ func Bootstrap(mgr *cfg.Manager) (func() error, error) {
 			return
 		}
 
-		old2 := state.update(next)
-
-		go func() {
-			if err := shutdownSnapshot(old2); err != nil {
-				facade.L().Error("old logger snapshot shutdown error",
-					zap.Error(apperrors.Wrap(err, apperrors.ErrInternal, "logger.snapshot")),
-				)
-			}
-		}()
+		state.replaceSnapshot(next)
 	})
 
 	return func() error {
