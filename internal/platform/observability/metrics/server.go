@@ -19,7 +19,7 @@ func StartServer(ctx context.Context, port int, h http.Handler) func(context.Con
 		IdleTimeout:  60 * time.Second,
 	}
 
-	ready := make(chan error, 1)
+	startErr := make(chan error, 1)
 
 	go func() {
 		fmt.Printf("[metrics] server starting on %s\n", srv.Addr)
@@ -27,18 +27,16 @@ func StartServer(ctx context.Context, port int, h http.Handler) func(context.Con
 		if err != nil && err != http.ErrServerClosed {
 			fmt.Printf("[metrics] server error: %v\n", err)
 			select {
-			case ready <- err:
+			case startErr <- err:
 			default:
 			}
 		}
 	}()
 
 	select {
-	case err := <-ready:
-		if err != nil {
-			fmt.Printf("[metrics] failed to start server: %v\n", err)
-			return func(context.Context) error { return err }
-		}
+	case err := <-startErr:
+		fmt.Printf("[metrics] failed to start server: %v\n", err)
+		return func(context.Context) error { return err }
 	case <-time.After(2 * time.Second):
 		fmt.Printf("[metrics] server started successfully on %s\n", srv.Addr)
 	case <-ctx.Done():
