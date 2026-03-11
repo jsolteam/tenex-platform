@@ -1,37 +1,4 @@
-version: "3.9"
-
 services:
-  # ─── Application services ─────────────────────────────────────────────────
-  bot:
-    extends:
-      file: local.yml
-      service: bot
-    depends_on:
-      postgres:       { condition: service_healthy }
-      redis:          { condition: service_healthy }
-      minio:          { condition: service_healthy }
-      otel-collector: { condition: service_healthy }
-      loki:           { condition: service_healthy }
-
-  scheduler:
-    extends:
-      file: local.yml
-      service: scheduler
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis:    { condition: service_healthy }
-      loki:     { condition: service_healthy }
-
-  worker:
-    extends:
-      file: local.yml
-      service: worker
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis:    { condition: service_healthy }
-      loki:     { condition: service_healthy }
-
-  # ─── Infrastructure ───────────────────────────────────────────────────────
   postgres:
     extends:
       file: local.yml
@@ -47,96 +14,56 @@ services:
       file: local.yml
       service: minio
 
-  # ─── Observability: Loki ─────────────────────────────────────────────────
   loki:
-    image: grafana/loki:2.9.0
-    ports:
-      - "3100:3100"
-    volumes:
-      - ../observability/loki-local.yaml:/etc/loki/local-config.yaml:ro
-    command: -config.file=/etc/loki/local-config.yaml
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3100/ready || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+    extends:
+      file: local.yml
+      service: loki
 
-  # ─── Observability: Tempo ────────────────────────────────────────────────
   tempo:
-    image: grafana/tempo:latest
-    command: ["-config.file=/etc/tempo.yaml"]
-    volumes:
-      - ../observability/tempo-local.yaml:/etc/tempo.yaml:ro
-    ports:
-      - "3200:3200"   # HTTP API / UI
-      - "4417:4317"   # OTLP gRPC
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3200/ready || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
+    extends:
+      file: local.yml
+      service: tempo
 
-  # ─── Observability: OpenTelemetry Collector ──────────────────────────────
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.96.0
-    command: ["--config=/etc/otel/config.yaml"]
-    volumes:
-      - ../observability/otel-collector.yaml:/etc/otel/config.yaml:ro
-    ports:
-      - "4317:4317"   # OTLP gRPC — сервисы → collector
-      - "4318:4318"   # OTLP HTTP
-      - "13133:13133" # health_check
-    depends_on:
-      tempo: { condition: service_healthy }
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:13133 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
+    extends:
+      file: local.yml
+      service: otel-collector
 
-  # ─── Observability: Prometheus ───────────────────────────────────────────
   prometheus:
     image: prom/prometheus:latest
     volumes:
       - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    ports:
-      - "9091:9090"
+      - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
-      - "--web.console.libraries=/etc/prometheus/console_libraries"
-      - "--web.console.templates=/etc/prometheus/consoles"
       - "--web.enable-remote-write-receiver"
     depends_on:
-      bot:       { condition: service_started }
+      loki: { condition: service_healthy }
+      tempo: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1"]
-      interval: 10s
-      timeout: 5s
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1" ]
+      interval: 30s
+      timeout: 10s
       retries: 5
-      start_period: 10s
+      start_period: 15s
 
-  # ─── Observability: Grafana ──────────────────────────────────────────────
   grafana:
     image: grafana/grafana:latest
     ports:
       - "3000:3000"
     environment:
-      # Анонимный доступ с правами Admin — только для локальной разработки
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
-      # Корреляция трейсов <-> логов
       - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor traceToMetrics
     volumes:
       - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
     depends_on:
       prometheus: { condition: service_healthy }
-      loki:       { condition: service_healthy }
-      tempo:      { condition: service_healthy }
+      loki: { condition: service_healthy }
+      tempo: { condition: service_healthy }
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
       interval: 10s
@@ -144,6 +71,38 @@ services:
       retries: 5
       start_period: 20s
 
+  bot:
+    extends:
+      file: local.yml
+      service: bot
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      loki: { condition: service_healthy }
+
+  scheduler:
+    extends:
+      file: local.yml
+      service: scheduler
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      loki: { condition: service_healthy }
+
+  worker:
+    extends:
+      file: local.yml
+      service: worker
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      loki: { condition: service_healthy }
+
 volumes:
   postgres-data:
   minio-data:
+  loki-data:
+  tempo-data:
+  prometheus-data:
+  grafana-data:
