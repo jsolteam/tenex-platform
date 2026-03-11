@@ -18,7 +18,7 @@ func StartServer(ctx context.Context, port int, h http.Handler) func(context.Con
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
-	
+
 	startErr := make(chan error, 1)
 
 	go func() {
