@@ -31,8 +31,9 @@ var envBindings = []struct {
 
 type EnvProvider struct{}
 
-func (e *EnvProvider) Name() string     { return "env" }
-func (e *EnvProvider) IsRequired() bool { return true }
+func (e *EnvProvider) Name() string { return "env" }
+
+func (e *EnvProvider) IsRequired() bool { return false }
 
 func (e *EnvProvider) Load() (map[string]interface{}, error) {
 	result := make(map[string]interface{}, len(envBindings))

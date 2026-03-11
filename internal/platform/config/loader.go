@@ -76,5 +76,14 @@ func isEmptyValue(val interface{}) bool {
 		return true
 	}
 	rv := reflect.ValueOf(val)
-	return rv.Kind() == reflect.String && rv.String() == ""
+	switch rv.Kind() {
+	case reflect.String:
+		return rv.String() == ""
+	case reflect.Slice, reflect.Map, reflect.Array:
+		return rv.Len() == 0
+	case reflect.Ptr, reflect.Interface:
+		return rv.IsNil()
+	default:
+		return false
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -83,8 +84,8 @@ func (w *Watcher) Run(ctx context.Context) error {
 			fmt.Fprintf(os.Stderr, "[config] reloaded from %s\n", w.path)
 		}
 	}
-
-	rewatchTrigger := make(chan struct{}, 1)
+	
+	var pendingRewatches atomic.Int64
 	rewatchDone := make(chan struct{}, 1)
 
 	goroutineWg.Add(1)
@@ -94,8 +95,19 @@ func (w *Watcher) Run(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
 				return
-			case <-rewatchTrigger:
+			default:
+			}
+
+			if pendingRewatches.Load() > 0 {
 				w.rewatchWithBackoff(ctx, fw, rewatchDone)
+				pendingRewatches.Store(0)
+				continue
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(10 * time.Millisecond):
 			}
 		}
 	}()
@@ -123,10 +135,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 				scheduleReload()
 			case event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename):
 				stopTimer()
-				select {
-				case rewatchTrigger <- struct{}{}:
-				default:
-				}
+				pendingRewatches.Add(1)
 			}
 
 		case err, ok := <-fw.Errors:
