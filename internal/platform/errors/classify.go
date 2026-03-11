@@ -31,6 +31,12 @@ func Classify(err error) Category {
 	}
 }
 
+// IsTemporary is an alias for IsRetryable kept for backwards compatibility.
+// Prefer IsRetryable in new code — "retryable" more precisely describes what
+// the flag means: the caller may safely retry the operation. "Temporary" is
+// ambiguous (it could mean the error resolves on its own without a retry).
+//
+// Deprecated: use IsRetryable.
 func IsTemporary(err error) bool {
 	return IsRetryable(err)
 }
