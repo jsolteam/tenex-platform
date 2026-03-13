@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync/atomic"
 
-	contextlog "github.com/jsol/tenex-platform/internal/platform/logger/context"
-	"github.com/jsol/tenex-platform/internal/platform/logger/core"
+	contextlog "github.com/jsolteam/tenex-platform/internal/platform/logger/context"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
 )
 
 var noop = core.NewNoop()

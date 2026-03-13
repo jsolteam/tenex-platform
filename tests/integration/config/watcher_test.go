@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jsol/tenex-platform/internal/platform/config"
+	"github.com/jsolteam/tenex-platform/internal/platform/config"
 )
 
 // validYAML возвращает минимально корректный YAML-конфиг.

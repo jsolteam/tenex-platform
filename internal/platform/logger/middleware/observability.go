@@ -6,8 +6,8 @@ import (
 
 	"go.uber.org/zap"
 
-	contextlog "github.com/jsol/tenex-platform/internal/platform/logger/context"
-	"github.com/jsol/tenex-platform/internal/platform/logger/core"
+	contextlog "github.com/jsolteam/tenex-platform/internal/platform/logger/context"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
 )
 
 type Handler func(ctx context.Context) error

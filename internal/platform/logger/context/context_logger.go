@@ -3,8 +3,8 @@ package contextlog
 import (
 	"context"
 
-	"github.com/jsol/tenex-platform/internal/platform/logger/core"
-	"github.com/jsol/tenex-platform/internal/platform/logger/tracing"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/tracing"
 )
 
 func FromCtx(ctx context.Context, l *core.Logger) *core.Logger {

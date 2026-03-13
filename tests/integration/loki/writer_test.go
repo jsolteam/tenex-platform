@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jsol/tenex-platform/internal/platform/logger/exporters/loki"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/exporters/loki"
 )
 
 type fakeLoki struct {

@@ -8,7 +8,7 @@ import (
 
 	"go.uber.org/zap/zapcore"
 
-	"github.com/jsol/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
 )
 
 type recordingCore struct {

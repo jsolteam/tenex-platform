@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jsol/tenex-platform/internal/platform/observability/tracing"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
 
 type TracingComponent struct {

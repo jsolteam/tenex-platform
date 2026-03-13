@@ -5,11 +5,11 @@ import (
 	"os"
 	"sync"
 
-	cfg "github.com/jsol/tenex-platform/internal/platform/config"
-	apperrors "github.com/jsol/tenex-platform/internal/platform/errors"
-	logcore "github.com/jsol/tenex-platform/internal/platform/logger/core"
-	"github.com/jsol/tenex-platform/internal/platform/logger/exporters/loki"
-	"github.com/jsol/tenex-platform/internal/platform/logger/facade"
+	cfg "github.com/jsolteam/tenex-platform/internal/platform/config"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
+	logcore "github.com/jsolteam/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/exporters/loki"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/facade"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )

@@ -1,9 +1,10 @@
-module github.com/jsol/tenex-platform
+module github.com/jsolteam/tenex-platform
 
 go 1.25
 
 require (
 	github.com/fsnotify/fsnotify v1.9.0
+	github.com/lib/pq v1.11.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/viper v1.21.0
 	go.opentelemetry.io/otel v1.40.0

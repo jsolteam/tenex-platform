@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jsol/tenex-platform/internal/platform/shutdown"
+	"github.com/jsolteam/tenex-platform/internal/platform/shutdown"
 )
 
 func noop(_ context.Context) error { return nil }

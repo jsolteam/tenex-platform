@@ -4,11 +4,11 @@ import (
 	"context"
 	"os"
 
-	"github.com/jsol/tenex-platform/internal/platform/container"
-	"github.com/jsol/tenex-platform/internal/platform/container/components"
-	apperrors "github.com/jsol/tenex-platform/internal/platform/errors"
-	"github.com/jsol/tenex-platform/internal/platform/logger/facade"
-	"github.com/jsol/tenex-platform/internal/platform/shutdown"
+	"github.com/jsolteam/tenex-platform/internal/platform/container"
+	"github.com/jsolteam/tenex-platform/internal/platform/container/components"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/facade"
+	"github.com/jsolteam/tenex-platform/internal/platform/shutdown"
 	"go.uber.org/zap"
 )
 

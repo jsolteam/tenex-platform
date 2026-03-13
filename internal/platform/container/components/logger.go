@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jsol/tenex-platform/internal/platform/logger"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger"
 )
 
 type LoggerComponent struct {
