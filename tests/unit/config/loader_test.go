@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jsol/tenex-platform/internal/platform/config"
+	"github.com/jsolteam/tenex-platform/internal/platform/config"
 )
 
 type requiredStub struct {

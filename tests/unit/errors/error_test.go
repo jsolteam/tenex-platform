@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	apperrors "github.com/jsol/tenex-platform/internal/platform/errors"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
 func TestWrap_CreatesAppError(t *testing.T) {

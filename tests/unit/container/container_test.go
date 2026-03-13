@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/jsol/tenex-platform/internal/platform/container"
+	"github.com/jsolteam/tenex-platform/internal/platform/container"
 )
 
 type recorder struct {

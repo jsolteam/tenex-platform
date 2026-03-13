@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/jsolteam/tenex-platform/internal/infrastructure/database"
 	"github.com/jsolteam/tenex-platform/internal/infrastructure/database/migrator"
-	"github.com/jsolteam/tenex-platform/internal/infrastructure/database/schema"
 	_ "github.com/lib/pq"
 )
 
@@ -58,7 +58,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
-	m := schema.New(db)
+	m := database.New(db)
 
 	switch cmd {
 	case "up":

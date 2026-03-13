@@ -9,8 +9,8 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
-	logcore "github.com/jsol/tenex-platform/internal/platform/logger/core"
-	"github.com/jsol/tenex-platform/internal/platform/logger/facade"
+	logcore "github.com/jsolteam/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/facade"
 )
 
 func TestFacade_LBeforeInitNotNil(t *testing.T) {

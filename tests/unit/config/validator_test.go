@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jsol/tenex-platform/internal/platform/config"
+	"github.com/jsolteam/tenex-platform/internal/platform/config"
 )
 
 func validCfg() *config.AppConfig {

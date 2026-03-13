@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	apperrors "github.com/jsol/tenex-platform/internal/platform/errors"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
 func appErr(code apperrors.ErrorCode) error {

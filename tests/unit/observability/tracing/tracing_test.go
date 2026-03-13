@@ -9,8 +9,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/jsol/tenex-platform/internal/platform/config"
-	"github.com/jsol/tenex-platform/internal/platform/observability/tracing"
+	"github.com/jsolteam/tenex-platform/internal/platform/config"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
 
 func minCfg() *config.AppConfig {

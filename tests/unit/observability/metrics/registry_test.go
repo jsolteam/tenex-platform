@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jsol/tenex-platform/internal/platform/observability/metrics"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 )
 
 // freePort возвращает свободный TCP-порт на localhost.

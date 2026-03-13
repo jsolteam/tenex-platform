@@ -12,9 +12,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/jsol/tenex-platform/internal/platform/config"
-	"github.com/jsol/tenex-platform/internal/platform/logger"
-	"github.com/jsol/tenex-platform/internal/platform/logger/facade"
+	"github.com/jsolteam/tenex-platform/internal/platform/config"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/facade"
 )
 
 func configYAML(env, logLevel string) []byte {
@@ -156,7 +156,7 @@ func TestE2E_AtomicFileReplaceRecovers(t *testing.T) {
 		t.Fatalf("logger.Bootstrap: %v", err)
 	}
 	defer logShutdown() //nolint:errcheck
-	
+
 	time.Sleep(50 * time.Millisecond)
 
 	var reloads atomic.Int64

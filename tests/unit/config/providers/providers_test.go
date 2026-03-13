@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jsol/tenex-platform/internal/platform/config/providers"
+	"github.com/jsolteam/tenex-platform/internal/platform/config/providers"
 )
 
 func TestEnvProvider_Name(t *testing.T) {

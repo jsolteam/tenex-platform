@@ -7,9 +7,9 @@ import (
 
 	"go.uber.org/zap/zapcore"
 
-	"github.com/jsol/tenex-platform/internal/platform/config"
-	"github.com/jsol/tenex-platform/internal/platform/logger"
-	logcore "github.com/jsol/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/config"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger"
+	logcore "github.com/jsolteam/tenex-platform/internal/platform/logger/core"
 )
 
 type memProvider struct {

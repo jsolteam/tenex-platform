@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	cfgproviders "github.com/jsol/tenex-platform/internal/platform/config/providers"
+	cfgproviders "github.com/jsolteam/tenex-platform/internal/platform/config/providers"
 )
 
 func Bootstrap(ctx context.Context, filePath string) (*Manager, func(), error) {
