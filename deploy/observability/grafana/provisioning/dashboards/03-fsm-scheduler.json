@@ -1,0 +1,170 @@
+{
+  "uid": "tenex-fsm",
+  "title": "Tenex — FSM & Scheduler",
+  "description": "Переходы FSM, состояния, планировщик напоминаний, ретраи",
+  "tags": ["tenex", "fsm", "scheduler"],
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-3h", "to": "now" },
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "🔄 FSM Transitions",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Transitions / min",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(rate(tenex_fsm_transitions_total[1m])) * 60", "refId": "A" }],
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 1, "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] } } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Total Transitions (1h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(increase(tenex_fsm_transitions_total[1h]))", "refId": "A" }],
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Unique States Active",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "count(sum by (state) (rate(tenex_fsm_transitions_total[5m])) > 0)", "refId": "A" }],
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "FSM Transitions by State",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum by (state) (rate(tenex_fsm_transitions_total[2m])) * 60",
+        "legendFormat": "{{state}}",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 5 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "lineWidth": 2, "fillOpacity": 10 } } }
+    },
+    {
+      "id": 6,
+      "type": "piechart",
+      "title": "State Distribution (1h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum by (state) (increase(tenex_fsm_transitions_total[1h]))",
+        "legendFormat": "{{state}}",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 5 },
+      "options": { "pieType": "donut", "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Transitions by Handler",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum by (handler) (rate(tenex_fsm_transitions_total[2m])) * 60",
+        "legendFormat": "{{handler}}",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "lineWidth": 2 } } }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "🔁 Retries",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "collapsed": false
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Retries / min",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(rate(tenex_retry_total[1m])) * 60", "refId": "A" }],
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 23 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short", "decimals": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 20 }] }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Total Retries (1h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(increase(tenex_retry_total[1h]))", "refId": "A" }],
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 23 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short", "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 200 }] }
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Retry Rate by Module",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum by (module, status) (rate(tenex_retry_total[2m])) * 60",
+        "legendFormat": "{{module}} / {{status}}",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 27 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "lineWidth": 2, "fillOpacity": 10 } } }
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "📋 FSM & Scheduler Logs",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "collapsed": false
+    },
+    {
+      "id": 13,
+      "type": "logs",
+      "title": "Scheduler Logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{
+        "expr": "{app=\"tenex\", service=\"scheduler\"} | json",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 36 },
+      "options": { "showTime": true, "wrapLogMessage": false, "sortOrder": "Descending", "enableLogDetails": true }
+    },
+    {
+      "id": 14,
+      "type": "logs",
+      "title": "Worker Logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{
+        "expr": "{app=\"tenex\", service=\"worker\"} | json",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 36 },
+      "options": { "showTime": true, "wrapLogMessage": false, "sortOrder": "Descending", "enableLogDetails": true }
+    }
+  ]
+}

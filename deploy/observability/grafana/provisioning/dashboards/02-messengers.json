@@ -1,0 +1,191 @@
+{
+  "uid": "tenex-messengers",
+  "title": "Tenex — Messengers",
+  "description": "Метрики по каждому мессенджеру: Telegram, VK и др.",
+  "tags": ["tenex", "messengers"],
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-3h", "to": "now" },
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "messenger",
+        "type": "query",
+        "label": "Messenger",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(tenex_updates_total, messenger)",
+        "query": "label_values(tenex_updates_total, messenger)",
+        "multi": true,
+        "includeAll": true,
+        "current": { "selected": true, "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "📊 Per Messenger Stats",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total Updates (1h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(increase(tenex_updates_total{messenger=~\"$messenger\"}[1h]))",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Success Rate (5m)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(rate(tenex_updates_total{messenger=~\"$messenger\", status=\"ok\"}[5m])) / sum(rate(tenex_updates_total{messenger=~\"$messenger\"}[5m])) * 100",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 95 }, { "color": "green", "value": 99 }] }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Adapter Errors (5m)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(increase(tenex_adapter_errors_total{messenger=~\"$messenger\"}[5m]))",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 10 }] }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "P99 Processing Time",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "histogram_quantile(0.99, sum by (le) (rate(tenex_update_processing_duration_seconds_bucket{messenger=~\"$messenger\"}[5m])))",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s", "decimals": 3,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Updates Rate by Messenger",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum by (messenger) (rate(tenex_updates_total{messenger=~\"$messenger\"}[2m])) * 60",
+        "legendFormat": "{{messenger}}",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "lineWidth": 2, "fillOpacity": 15 } } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Processing Duration Percentiles",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, messenger) (rate(tenex_update_processing_duration_seconds_bucket{messenger=~\"$messenger\"}[5m])))",
+          "legendFormat": "p50 {{messenger}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, messenger) (rate(tenex_update_processing_duration_seconds_bucket{messenger=~\"$messenger\"}[5m])))",
+          "legendFormat": "p95 {{messenger}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, messenger) (rate(tenex_update_processing_duration_seconds_bucket{messenger=~\"$messenger\"}[5m])))",
+          "legendFormat": "p99 {{messenger}}",
+          "refId": "C"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 2 } } }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Errors by Messenger",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum by (messenger, status) (rate(tenex_adapter_errors_total{messenger=~\"$messenger\"}[2m])) * 60",
+        "legendFormat": "{{messenger}} / {{status}}",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 20 },
+          "color": { "mode": "palette-classic" }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "piechart",
+      "title": "Updates Distribution by Messenger",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum by (messenger) (increase(tenex_updates_total{messenger=~\"$messenger\"}[1h]))",
+        "legendFormat": "{{messenger}}",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "options": { "pieType": "donut", "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] } }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "📋 Messenger Logs",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 },
+      "collapsed": false
+    },
+    {
+      "id": 11,
+      "type": "logs",
+      "title": "Adapter Logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{
+        "expr": "{app=\"tenex\"} | json | messenger=~\"$messenger\"",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 22 },
+      "options": { "showTime": true, "showLabels": true, "wrapLogMessage": false, "sortOrder": "Descending", "enableLogDetails": true }
+    }
+  ]
+}
