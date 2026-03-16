@@ -1,0 +1,235 @@
+# PROD INFRASTRUCTURE
+# Платформа подключается через сеть tenex-prod.
+# Запуск: docker compose --env-file .env up -d
+
+services:
+
+  # ── Infrastructure ────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB:       ${DB_NAME}
+      POSTGRES_USER:     ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal
+      - tenex-prod
+    healthcheck:
+      test:         ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval:     5s
+      timeout:      5s
+      retries:      10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    networks:
+      - internal
+      - tenex-prod
+    healthcheck:
+      test:     ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout:  3s
+      retries:  10
+
+  minio:
+    image: minio/minio:latest
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${S3_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET}
+    volumes:
+      - minio-data:/data
+    networks:
+      - internal
+      - tenex-prod
+    healthcheck:
+      test:         ["CMD", "mc", "ready", "local"]
+      interval:     10s
+      timeout:      5s
+      retries:      10
+      start_period: 15s
+
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    networks:
+      - internal
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+        mc alias set local http://minio:9000 ${S3_KEY} ${S3_SECRET} &&
+        mc mb --ignore-existing local/${S3_BUCKET} &&
+        echo 'bucket ${S3_BUCKET} ready'
+      "
+
+  # ── Observability ─────────────────────────────────────────────────────────
+
+  loki:
+    image: grafana/loki:3.5.12
+    restart: always
+    command: -config.file=/etc/loki/config.yaml
+    volumes:
+      - ../../../deploy/observability/loki-config.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    networks:
+      - internal
+      - tenex-prod
+    healthcheck:
+      test:         ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval:     10s
+      timeout:      5s
+      retries:      10
+      start_period: 20s
+
+  tempo:
+    image: grafana/tempo:2.10.2
+    restart: always
+    command: -config.file=/etc/tempo/config.yaml
+    volumes:
+      - ../../../deploy/observability/tempo-config.yaml:/etc/tempo/config.yaml:ro
+      - tempo-data:/var/tempo
+    networks:
+      - internal
+
+  tempo-health:
+    image: curlimages/curl:8.2.1
+    restart: "no"
+    networks:
+      - internal
+    depends_on:
+      tempo:
+        condition: service_started
+    entrypoint:
+      - sh
+      - -c
+      - |
+        echo "Waiting for Tempo..."
+        while ! curl -sf http://tempo:3200/ready; do sleep 2; done
+        echo "Tempo ready."
+
+  otel:
+    image: otel/opentelemetry-collector-contrib:0.147.0
+    restart: always
+    command: --config=/etc/otel/config.yaml
+    volumes:
+      - ../../../deploy/observability/otel-collector.yaml:/etc/otel/config.yaml:ro
+    networks:
+      - internal
+      - tenex-prod
+    depends_on:
+      tempo-health:
+        condition: service_completed_successfully
+
+  otel-health:
+    image: curlimages/curl:8.2.1
+    restart: "no"
+    networks:
+      - internal
+      - tenex-prod
+    depends_on:
+      otel:
+        condition: service_started
+    entrypoint:
+      - sh
+      - -c
+      - |
+        echo "Waiting for OTel..."
+        while ! curl -sf http://otel:13133; do sleep 2; done
+        echo "OTel ready."
+
+  prometheus:
+    image: prom/prometheus:v3.10.0
+    restart: always
+    command:
+      - "--config.file=/etc/prometheus/config.yaml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-remote-write-receiver"
+    volumes:
+      - ../../../deploy/observability/prometheus.yaml:/etc/prometheus/config.yaml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - internal
+      - tenex-prod
+    depends_on:
+      otel-health:
+        condition: service_completed_successfully
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test:         ["CMD-SHELL", "wget -q --spider http://localhost:9090/-/healthy || exit 1"]
+      interval:     15s
+      timeout:      10s
+      retries:      5
+      start_period: 20s
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED:  "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_FEATURE_TOGGLES_ENABLE:  "traceqlEditor traceToMetrics"
+    volumes:
+      - ../../../deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      - internal
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test:         ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval:     10s
+      timeout:      5s
+      retries:      10
+      start_period: 30s
+
+  migrate:
+    image: ghcr.io/jsolteam/tenex-platform/migrate:${IMAGE_TAG:-latest}
+    restart: "no"
+    command: ["up"]
+    environment:
+      DB_HOST:     postgres
+      DB_PORT:     ${DB_PORT:-5432}
+      DB_USER:     ${DB_USER}
+      DB_PASS:     ${DB_PASS}
+      DB_NAME:     ${DB_NAME}
+      DB_SSL_MODE: ${DB_SSL_MODE:-disable}
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  minio-data:
+  loki-data:
+  tempo-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  # Закрытая сеть
+  internal:
+    driver: bridge
+    internal: true
+
+  # Мост для платформы
+  tenex-prod:
+    name: tenex-prod
+    driver: bridge

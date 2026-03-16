@@ -1,50 +1,46 @@
-name: Release
+name: Release & Deploy
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/tenex-platform
+
 jobs:
-  docker:
+  # ── Build & Push всех образов ──────────────────────────────────────────────
+  build:
+    name: Build ${{ matrix.binary }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     strategy:
       matrix:
-        include:
-          - service: bot
-            binary: tenex
-            image: tenex/bot
-          - service: scheduler
-            binary: scheduler
-            image: tenex/scheduler
-          - service: worker
-            binary: worker
-            image: tenex/worker
+        binary: [ bot, scheduler, worker, migrate ]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Login to Docker Hub
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USER }}
-          password: ${{ secrets.DOCKER_PASS }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version tag
+      - name: Extract tag
         id: meta
         run: |
-          SHA_TAG="${{ matrix.image }}:${{ github.sha }}"
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
-            echo "tags=${SHA_TAG},${{ matrix.image }}:${VERSION}" >> $GITHUB_OUTPUT
-          else
-            echo "tags=${SHA_TAG}" >> $GITHUB_OUTPUT
-          fi
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "image=${{ env.IMAGE_PREFIX }}/${{ matrix.binary }}" >> $GITHUB_OUTPUT
 
-      - name: Build and push ${{ matrix.service }}
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -52,4 +48,46 @@ jobs:
           push: true
           build-args: |
             BINARY=${{ matrix.binary }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.image }}:latest
+
+  # ── Deploy на prod-сервер ──────────────────────────────────────────────────
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+
+    steps:
+      - name: Extract version
+        id: meta
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            set -e
+
+            cd /opt/tenex/platform
+
+            echo "==> Pulling new images (tag: ${{ steps.meta.outputs.version }})"
+            IMAGE_TAG=${{ steps.meta.outputs.version }} \
+              docker compose --env-file .env pull
+
+            echo "==> Running migrations"
+            IMAGE_TAG=${{ steps.meta.outputs.version }} \
+              docker compose --env-file .env run --rm migrate-check up
+
+            echo "==> Restarting platform (zero-downtime rolling)"
+            IMAGE_TAG=${{ steps.meta.outputs.version }} \
+              docker compose --env-file .env up -d --no-deps --remove-orphans
+
+            echo "==> Cleaning up old images"
+            docker image prune -f
+
+            echo "==> Deploy complete: ${{ steps.meta.outputs.version }}"
