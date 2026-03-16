@@ -19,15 +19,14 @@ CREATE TABLE schedules
     schedule_type VARCHAR(32) NOT NULL,  -- daily | weekly | interval
     interval_days SMALLINT,              -- used when type = interval
     days_of_week  SMALLINT,              -- bitmask, used when type = weekly
-    times         TIME[]       NOT NULL, -- array of wall-clock times, e.g. {08:00,20:00}
+    times         TIME[]      NOT NULL,  -- array of wall-clock times, e.g. {08:00,20:00}
     start_date    DATE        NOT NULL,
     end_date      DATE,                  -- NULL means no end
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Scheduler reads schedules to generate reminders.
 CREATE INDEX idx_schedules_medicine_id ON schedules (medicine_id);
 
--- Quick range scan: "active schedules starting before today with no end or end >= today"
-CREATE INDEX idx_schedules_active
-    ON schedules (start_date, end_date) WHERE end_date IS NULL OR end_date >= CURRENT_DATE;
+CREATE INDEX idx_schedules_date_range ON schedules (start_date, end_date);
+
+CREATE INDEX idx_schedules_no_end ON schedules (start_date) WHERE end_date IS NULL;

@@ -11,7 +11,6 @@ CREATE TABLE reminders
     idempotency_key UUID        NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    -- Primary key must include the partition key.
     PRIMARY KEY (id, scheduled_at)
 ) PARTITION BY RANGE (scheduled_at);
 
@@ -33,23 +32,18 @@ CREATE TABLE reminders_2027_01 PARTITION OF reminders FOR VALUES FROM ('2027-01-
 CREATE TABLE reminders_2027_02 PARTITION OF reminders FOR VALUES FROM ('2027-02-01') TO ('2027-03-01');
 CREATE TABLE reminders_2027_03 PARTITION OF reminders FOR VALUES FROM ('2027-03-01') TO ('2027-04-01');
 
--- User's history sorted newest-first (most common read query).
 CREATE INDEX idx_reminders_user_time
     ON reminders (user_id, scheduled_at DESC);
 
--- Idempotency: prevents duplicate reminders from the scheduler.
 CREATE UNIQUE INDEX uidx_reminders_idempotency
-    ON reminders (idempotency_key);
+    ON reminders (idempotency_key, scheduled_at);
 
--- Scheduler re-generates reminders per schedule; lets it check existing ones.
 CREATE INDEX idx_reminders_schedule
     ON reminders (schedule_id);
 
--- Analytics: confirmed rate over a time window.
 CREATE INDEX idx_reminders_confirmed_time
     ON reminders (scheduled_at)
     WHERE status = 'confirmed';
 
--- Combined: "how many skips did user X have?"
 CREATE INDEX idx_reminders_user_status
     ON reminders (user_id, status);

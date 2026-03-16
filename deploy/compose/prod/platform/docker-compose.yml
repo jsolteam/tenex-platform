@@ -1,0 +1,92 @@
+# PROD PLATFORM
+# Обновляется автоматически через GitHub Actions при новом релизе.
+# Подключается к инфраструктуре через внешнюю сеть tenex-prod.
+#
+# Запуск: docker compose --env-file .env up -d
+# Обновление: IMAGE_TAG=v1.2.3 docker compose --env-file .env up -d
+
+services:
+
+  # ── Bots ──────────────────────────────────────────────────────────────────
+
+  bot-telegram:
+    image: ghcr.io/jsolteam/tenex-platform/bot:${IMAGE_TAG:-latest}
+    restart: always
+    stop_grace_period: 30s
+    env_file: .env
+    environment:
+      MESSENGER:       telegram
+      MESSENGER_TOKEN: ${TELEGRAM_TOKEN}
+    networks:
+      - tenex-prod
+    depends_on:
+      migrate-check:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+
+  # bot-vk:
+  #   image: ghcr.io/jsolteam/tenex-platform/bot:${IMAGE_TAG:-latest}
+  #   restart: always
+  #   stop_grace_period: 30s
+  #   env_file: .env
+  #   environment:
+  #     MESSENGER:       vk
+  #     MESSENGER_TOKEN: ${VKONTAKTE_TOKEN}
+  #   networks:
+  #     - tenex-prod
+  #   depends_on:
+  #     migrate-check:
+  #       condition: service_completed_successfully
+
+  scheduler:
+    image: ghcr.io/jsolteam/tenex-platform/scheduler:${IMAGE_TAG:-latest}
+    restart: always
+    stop_grace_period: 30s
+    env_file: .env
+    networks:
+      - tenex-prod
+    depends_on:
+      migrate-check:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+  worker:
+    image: ghcr.io/jsolteam/tenex-platform/worker:${IMAGE_TAG:-latest}
+    restart: always
+    stop_grace_period: 30s
+    env_file: .env
+    networks:
+      - tenex-prod
+    depends_on:
+      migrate-check:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+  # ── Migrations guard ──────────────────────────────────────────────────────
+
+  migrate-check:
+    image: ghcr.io/jsolteam/tenex-platform/migrate:${IMAGE_TAG:-latest}
+    restart: "no"
+    command: ["up"]
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+    networks:
+      - tenex-prod
+
+networks:
+  tenex-prod:
+    name: tenex-prod
+    external: true

@@ -10,10 +10,11 @@ RUN go mod download
 
 COPY . .
 
-ARG BINARY=tenex
+ARG BINARY=bot
+
 RUN case "${BINARY}" in \
-        bot|tenex|scheduler|worker) echo "Building binary: ${BINARY}" ;; \
-        *) echo "ERROR: invalid BINARY='${BINARY}'. Allowed: tenex, scheduler, worker" && exit 1 ;; \
+        bot|tenex|scheduler|worker|migrate) echo "Building binary: ${BINARY}" ;; \
+        *) echo "ERROR: invalid BINARY='${BINARY}'. Allowed: bot, scheduler, worker, migrate" && exit 1 ;; \
     esac
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
