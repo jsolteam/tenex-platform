@@ -1,0 +1,155 @@
+{
+  "uid": "tenex-logs",
+  "title": "Tenex — Logs Explorer",
+  "description": "Поиск и анализ логов по всем сервисам с drill-down в трейсы",
+  "tags": ["tenex", "logs", "loki"],
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "label": "Service",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "definition": "label_values(service)",
+        "query": { "label": "service", "stream": "", "type": 1 },
+        "multi": true,
+        "includeAll": true,
+        "current": { "selected": true, "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "level",
+        "type": "custom",
+        "label": "Level",
+        "options": [
+          { "selected": true, "text": "All", "value": "" },
+          { "selected": false, "text": "debug", "value": "debug" },
+          { "selected": false, "text": "info", "value": "info" },
+          { "selected": false, "text": "warn", "value": "warn" },
+          { "selected": false, "text": "error", "value": "error" }
+        ],
+        "multi": false,
+        "includeAll": true,
+        "current": { "selected": true, "text": "All", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "📊 Log Volume",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total Logs (1h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(increase(loki_ingester_streams_created_total[1h]))", "refId": "A" }],
+      "gridPos": { "h": 3, "w": 4, "x": 0, "y": 1 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Log Volume by Level",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "expr": "sum(count_over_time({app=\"tenex\"} | json | level=\"error\" [1m]))", "legendFormat": "error", "refId": "A" },
+        { "expr": "sum(count_over_time({app=\"tenex\"} | json | level=\"warn\" [1m]))", "legendFormat": "warn", "refId": "B" },
+        { "expr": "sum(count_over_time({app=\"tenex\"} | json | level=\"info\" [1m]))", "legendFormat": "info", "refId": "C" },
+        { "expr": "sum(count_over_time({app=\"tenex\"} | json | level=\"debug\" [1m]))", "legendFormat": "debug", "refId": "D" }
+      ],
+      "gridPos": { "h": 8, "w": 20, "x": 4, "y": 1 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "lineWidth": 2, "fillOpacity": 10 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "warn" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "info" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "debug" }, "properties": [{ "id": "color", "value": { "fixedColor": "gray", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "type": "row",
+      "title": "🔴 Errors",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "collapsed": false
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Error Logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{
+        "expr": "{app=\"tenex\"} | json | level=\"error\"",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 10 },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": false,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "🟡 Warnings",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "collapsed": false
+    },
+    {
+      "id": 7,
+      "type": "logs",
+      "title": "Warning Logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{
+        "expr": "{app=\"tenex\"} | json | level=\"warn\"",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 23 },
+      "options": { "showTime": true, "showLabels": false, "wrapLogMessage": false, "enableLogDetails": true, "sortOrder": "Descending" }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "🔵 All Logs",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 33 },
+      "collapsed": false
+    },
+    {
+      "id": 9,
+      "type": "logs",
+      "title": "All Logs (with trace drill-down)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{
+        "expr": "{app=\"tenex\", service=~\"$service\"} | json",
+        "refId": "A"
+      }],
+      "gridPos": { "h": 15, "w": 24, "x": 0, "y": 34 },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": false,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    }
+  ]
+}
