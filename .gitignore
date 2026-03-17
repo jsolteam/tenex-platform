@@ -49,7 +49,6 @@ data/
 tmp/
 cache/
 uploads/
-media/
 s3/
 
 test-results/
