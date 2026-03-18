@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jsolteam/tenex-platform/internal/domain/user"
+	"github.com/lib/pq"
 )
 
 type Repository struct {
@@ -59,13 +60,13 @@ func (r *Repository) GetByMessenger(ctx context.Context, messengerType user.Mess
 }
 
 // Create создаёт нового пользователя вместе с первичным контактом в одной транзакции.
-func (r *Repository) Create(ctx context.Context, u *user.User, contact *user.UserContact) error {
+func (r *Repository) Create(ctx context.Context, u *user.User, contact *user.UserContact) (retErr error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("userrepo.Create: begin tx: %w", err)
 	}
 	defer func() {
-		if err != nil {
+		if retErr != nil {
 			_ = tx.Rollback()
 		}
 	}()
@@ -75,10 +76,10 @@ func (r *Repository) Create(ctx context.Context, u *user.User, contact *user.Use
 		VALUES ($1, $2)
 		RETURNING id, created_at, updated_at`
 
-	err = tx.QueryRowContext(ctx, qUser, u.Timezone, u.Language).
-		Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("userrepo.Create: insert user: %w", err)
+	if err = tx.QueryRowContext(ctx, qUser, u.Timezone, u.Language).
+		Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		retErr = fmt.Errorf("userrepo.Create: insert user: %w", err)
+		return
 	}
 
 	contact.UserID = u.ID
@@ -89,17 +90,16 @@ func (r *Repository) Create(ctx context.Context, u *user.User, contact *user.Use
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, created_at`
 
-	err = tx.QueryRowContext(ctx, qContact,
-		contact.UserID, contact.MessengerType, contact.MessengerUserID, contact.Username, contact.IsPrimary,
-	).Scan(&contact.ID, &contact.CreatedAt)
-	if err != nil {
-		return fmt.Errorf("userrepo.Create: insert contact: %w", err)
+	if err = tx.QueryRowContext(ctx, qContact,
+		contact.UserID, contact.MessengerType, contact.MessengerUserID,
+		contact.Username, contact.IsPrimary,
+	).Scan(&contact.ID, &contact.CreatedAt); err != nil {
+		retErr = fmt.Errorf("userrepo.Create: insert contact: %w", err)
+		return
 	}
 
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("userrepo.Create: commit: %w", err)
-	}
-	return nil
+	retErr = tx.Commit()
+	return
 }
 
 // Update обновляет timezone и language пользователя.
@@ -161,43 +161,52 @@ func (r *Repository) AddContact(ctx context.Context, contact *user.UserContact) 
 		contact.Username, contact.IsPrimary,
 	).Scan(&contact.ID, &contact.CreatedAt)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return user.ErrContactAlreadyExists
+		}
 		return fmt.Errorf("userrepo.AddContact: %w", err)
 	}
 	return nil
 }
 
 // SetPrimaryContact делает указанный контакт основным.
-func (r *Repository) SetPrimaryContact(ctx context.Context, userID, contactID int64) error {
+func (r *Repository) SetPrimaryContact(ctx context.Context, userID, contactID int64) (retErr error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("userrepo.SetPrimaryContact: begin tx: %w", err)
 	}
 	defer func() {
-		if err != nil {
+		if retErr != nil {
 			_ = tx.Rollback()
 		}
 	}()
 
-	_, err = tx.ExecContext(ctx,
-		`UPDATE user_contacts SET is_primary = false WHERE user_id = $1`, userID)
-	if err != nil {
-		return fmt.Errorf("userrepo.SetPrimaryContact: reset: %w", err)
+	if _, err = tx.ExecContext(ctx,
+		`UPDATE user_contacts SET is_primary = false WHERE user_id = $1`, userID,
+	); err != nil {
+		retErr = fmt.Errorf("userrepo.SetPrimaryContact: reset: %w", err)
+		return
 	}
 
-	var affected int64
-	err = tx.QueryRowContext(ctx,
+	var id int64
+	if err = tx.QueryRowContext(ctx,
 		`UPDATE user_contacts SET is_primary = true WHERE id = $1 AND user_id = $2 RETURNING id`,
 		contactID, userID,
-	).Scan(&affected)
-	if errors.Is(err, sql.ErrNoRows) {
-		return user.ErrContactNotFound
-	}
-	if err != nil {
-		return fmt.Errorf("userrepo.SetPrimaryContact: set: %w", err)
+	).Scan(&id); errors.Is(err, sql.ErrNoRows) {
+		retErr = user.ErrContactNotFound
+		return
+	} else if err != nil {
+		retErr = fmt.Errorf("userrepo.SetPrimaryContact: set: %w", err)
+		return
 	}
 
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("userrepo.SetPrimaryContact: commit: %w", err)
-	}
-	return nil
+	retErr = tx.Commit()
+	return
 }
+
+// isUniqueViolation проверяет что ошибка — нарушение уникального индекса (PostgreSQL code 23505).
+func isUniqueViolation(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505"
+}
+ 
