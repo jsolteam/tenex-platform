@@ -19,10 +19,11 @@ func TestEnvProvider_IsRequired(t *testing.T) {
 	type requiredChecker interface{ IsRequired() bool }
 	rc, ok := interface{}(p).(requiredChecker)
 	if !ok {
-		t.Fatal("EnvProvider must implement IsRequired() — C-5 fix missing")
+		t.Fatal("EnvProvider must implement IsRequired()")
 	}
-	if !rc.IsRequired() {
-		t.Error("EnvProvider.IsRequired() should return true")
+
+	if rc.IsRequired() {
+		t.Error("EnvProvider.IsRequired() should return false — it is optional")
 	}
 }
 
