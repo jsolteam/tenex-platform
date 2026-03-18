@@ -3,6 +3,15 @@ package repositories
 import (
 	"database/sql"
 
+	"github.com/jsolteam/tenex-platform/internal/domain/config"
+	"github.com/jsolteam/tenex-platform/internal/domain/intake"
+	"github.com/jsolteam/tenex-platform/internal/domain/media"
+	"github.com/jsolteam/tenex-platform/internal/domain/medicine"
+	"github.com/jsolteam/tenex-platform/internal/domain/reminder"
+	"github.com/jsolteam/tenex-platform/internal/domain/schedule"
+	"github.com/jsolteam/tenex-platform/internal/domain/user"
+	"github.com/jsolteam/tenex-platform/internal/domain/watcher"
+
 	configrepo "github.com/jsolteam/tenex-platform/internal/infrastructure/database/repositories/config"
 	intakerepo "github.com/jsolteam/tenex-platform/internal/infrastructure/database/repositories/intake"
 	mediarepo "github.com/jsolteam/tenex-platform/internal/infrastructure/database/repositories/media"
@@ -13,20 +22,20 @@ import (
 	watcherrepo "github.com/jsolteam/tenex-platform/internal/infrastructure/database/repositories/watcher"
 )
 
-// Repositories — все репозитории платформы.
+// Repositories — все репозитории платформы
 type Repositories struct {
-	User      *userrepo.Repository
-	UserStats *userrepo.StatisticsRepository
-	Media     *mediarepo.Repository
-	Medicine  *medicinerepo.Repository
-	Schedule  *schedulerepo.Repository
-	Reminder  *reminderrepo.Repository
-	Intake    *intakerepo.Repository
-	Watcher   *watcherrepo.Repository
-	Config    *configrepo.Repository
+	User      user.Repository
+	UserStats user.StatisticsRepository
+	Media     media.Repository
+	Medicine  medicine.Repository
+	Schedule  schedule.Repository
+	Reminder  reminder.Repository
+	Intake    intake.Repository
+	Watcher   watcher.Repository
+	Config    config.Repository
 }
 
-func NewRepositories(db *sql.DB) *Repositories {
+func New(db *sql.DB) *Repositories {
 	return &Repositories{
 		User:      userrepo.New(db),
 		UserStats: userrepo.NewStatistics(db),
