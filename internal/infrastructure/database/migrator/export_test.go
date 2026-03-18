@@ -1,9 +1,10 @@
 package migrator
 
-func ParseFilenameExported(name string) (int, string, error) {
-	return parseFilename(name)
-}
+// ParseFilename экспортируется только для тестов.
+var ParseFilename = parseFilename
 
-func ChecksumExported(content []byte) string {
-	return checksum(content)
-}
+// Checksum экспортируется только для тестов.
+var Checksum = checksum
+
+// DetectDuplicates экспортируется только для тестов.
+var DetectDuplicates = detectDuplicates
