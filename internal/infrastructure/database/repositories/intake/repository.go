@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jsolteam/tenex-platform/internal/domain/intake"
+	"github.com/lib/pq"
 )
 
 type Repository struct {
@@ -66,7 +67,7 @@ func (r *Repository) ListByReminders(ctx context.Context, reminderIDs []int64) (
 		WHERE reminder_id = ANY($1)
 		ORDER BY created_at DESC`
 
-	rows, err := r.db.QueryContext(ctx, q, int64SliceToArray(reminderIDs))
+	rows, err := r.db.QueryContext(ctx, q, pq.Array(reminderIDs))
 	if err != nil {
 		return nil, fmt.Errorf("intakerepo.ListByReminders: %w", err)
 	}
