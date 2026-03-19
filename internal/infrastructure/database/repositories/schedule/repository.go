@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/lib/pq"
 
 	"github.com/jsolteam/tenex-platform/internal/domain/schedule"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
 type Repository struct {
@@ -32,7 +32,7 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (*schedule.Schedule,
 		return nil, schedule.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("schedulerepo.GetByID: %w", err)
+		return nil, apperrors.DB("schedulerepo.GetByID", err)
 	}
 	return s, nil
 }
@@ -45,7 +45,11 @@ func (r *Repository) ListByMedicine(ctx context.Context, medicineID int64) ([]sc
 		WHERE medicine_id = $1
 		ORDER BY created_at ASC`
 
-	return r.queryList(ctx, q, medicineID)
+	result, err := r.queryList(ctx, q, medicineID)
+	if err != nil {
+		return nil, apperrors.DB("schedulerepo.ListByMedicine", err)
+	}
+	return result, nil
 }
 
 // ListActive возвращает расписания активные на указанную дату.
@@ -56,7 +60,11 @@ func (r *Repository) ListActive(ctx context.Context, date time.Time) ([]schedule
 		WHERE start_date <= $1 AND (end_date IS NULL OR end_date >= $1)
 		ORDER BY id ASC`
 
-	return r.queryList(ctx, q, date.Truncate(24*time.Hour))
+	result, err := r.queryList(ctx, q, date.Truncate(24*time.Hour))
+	if err != nil {
+		return nil, apperrors.DB("schedulerepo.ListActive", err)
+	}
+	return result, nil
 }
 
 // Create создаёт новое расписание.
@@ -76,7 +84,7 @@ func (r *Repository) Create(ctx context.Context, s *schedule.Schedule) error {
 		s.EndDate,
 	).Scan(&s.ID, &s.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("schedulerepo.Create: %w", err)
+		return apperrors.DB("schedulerepo.Create", err)
 	}
 	return nil
 }
@@ -95,7 +103,7 @@ func (r *Repository) Update(ctx context.Context, s *schedule.Schedule) error {
 		s.StartDate, s.EndDate, s.ID,
 	)
 	if err != nil {
-		return fmt.Errorf("schedulerepo.Update: %w", err)
+		return apperrors.DB("schedulerepo.Update", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -110,7 +118,7 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 
 	res, err := r.db.ExecContext(ctx, q, id)
 	if err != nil {
-		return fmt.Errorf("schedulerepo.Delete: %w", err)
+		return apperrors.DB("schedulerepo.Delete", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -124,7 +132,7 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 func (r *Repository) queryList(ctx context.Context, q string, args ...any) ([]schedule.Schedule, error) {
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("schedulerepo: query: %w", err)
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -132,14 +140,13 @@ func (r *Repository) queryList(ctx context.Context, q string, args ...any) ([]sc
 	for rows.Next() {
 		s, err := r.scanRow(rows)
 		if err != nil {
-			return nil, fmt.Errorf("schedulerepo: scan: %w", err)
+			return nil, err
 		}
 		result = append(result, *s)
 	}
 	return result, rows.Err()
 }
 
-// scanner — общий интерфейс для *sql.Row и *sql.Rows.
 type scanner interface {
 	Scan(dest ...any) error
 }
@@ -178,7 +185,6 @@ func (r *Repository) scanRow(s scanner) (*schedule.Schedule, error) {
 	return &row, nil
 }
 
-// timesToStrings конвертирует []time.Time в []string для хранения в PostgreSQL TIME[].
 func timesToStrings(times []time.Time) []string {
 	out := make([]string, len(times))
 	for i, t := range times {
@@ -187,7 +193,6 @@ func timesToStrings(times []time.Time) []string {
 	return out
 }
 
-// stringsToTimes конвертирует []string обратно в []time.Time.
 func stringsToTimes(ss []string) []time.Time {
 	out := make([]time.Time, 0, len(ss))
 	for _, s := range ss {

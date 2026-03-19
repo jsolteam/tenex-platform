@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	domainconfig "github.com/jsolteam/tenex-platform/internal/domain/config"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
 type Repository struct {
@@ -27,7 +27,7 @@ func (r *Repository) Get(ctx context.Context, key string) (*domainconfig.Platfor
 		return nil, domainconfig.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("configrepo.Get: %w", err)
+		return nil, apperrors.DB("configrepo.Get", err)
 	}
 	return c, nil
 }
@@ -38,7 +38,7 @@ func (r *Repository) GetAll(ctx context.Context) ([]domainconfig.PlatformConfig,
 
 	rows, err := r.db.QueryContext(ctx, q)
 	if err != nil {
-		return nil, fmt.Errorf("configrepo.GetAll: %w", err)
+		return nil, apperrors.DB("configrepo.GetAll", err)
 	}
 	defer rows.Close()
 
@@ -46,11 +46,14 @@ func (r *Repository) GetAll(ctx context.Context) ([]domainconfig.PlatformConfig,
 	for rows.Next() {
 		var c domainconfig.PlatformConfig
 		if err = rows.Scan(&c.Key, &c.Value, &c.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("configrepo.GetAll: scan: %w", err)
+			return nil, apperrors.DB("configrepo.GetAll.scan", err)
 		}
 		result = append(result, c)
 	}
-	return result, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, apperrors.DB("configrepo.GetAll.rows", err)
+	}
+	return result, nil
 }
 
 // Set создаёт или обновляет значение конфигурации.
@@ -62,7 +65,7 @@ func (r *Repository) Set(ctx context.Context, key, value string) error {
 
 	_, err := r.db.ExecContext(ctx, q, key, value)
 	if err != nil {
-		return fmt.Errorf("configrepo.Set: %w", err)
+		return apperrors.DB("configrepo.Set", err)
 	}
 	return nil
 }
@@ -73,7 +76,7 @@ func (r *Repository) Delete(ctx context.Context, key string) error {
 
 	res, err := r.db.ExecContext(ctx, q, key)
 	if err != nil {
-		return fmt.Errorf("configrepo.Delete: %w", err)
+		return apperrors.DB("configrepo.Delete", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {

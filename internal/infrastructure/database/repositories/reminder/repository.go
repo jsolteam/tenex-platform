@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/jsolteam/tenex-platform/internal/domain/reminder"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
 type Repository struct {
@@ -33,7 +33,7 @@ func (r *Repository) GetByID(ctx context.Context, id int64, scheduledAt time.Tim
 		return nil, reminder.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("reminderrepo.GetByID: %w", err)
+		return nil, apperrors.DB("reminderrepo.GetByID", err)
 	}
 	return rem, nil
 }
@@ -51,7 +51,7 @@ func (r *Repository) GetByIdempotencyKey(ctx context.Context, key uuid.UUID) (*r
 		return nil, reminder.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("reminderrepo.GetByIdempotencyKey: %w", err)
+		return nil, apperrors.DB("reminderrepo.GetByIdempotencyKey", err)
 	}
 	return rem, nil
 }
@@ -65,7 +65,11 @@ func (r *Repository) ListByUser(ctx context.Context, userID int64, from, to time
 		WHERE user_id = $1 AND scheduled_at BETWEEN $2 AND $3
 		ORDER BY scheduled_at DESC`
 
-	return queryList(ctx, r.db, q, userID, from, to)
+	result, err := queryList(ctx, r.db, q, userID, from, to)
+	if err != nil {
+		return nil, apperrors.DB("reminderrepo.ListByUser", err)
+	}
+	return result, nil
 }
 
 // ListPending возвращает напоминания требующие обработки.
@@ -78,7 +82,11 @@ func (r *Repository) ListPending(ctx context.Context, before time.Time, limit in
 		ORDER BY scheduled_at ASC
 		LIMIT $2`
 
-	return queryList(ctx, r.db, q, before, limit)
+	result, err := queryList(ctx, r.db, q, before, limit)
+	if err != nil {
+		return nil, apperrors.DB("reminderrepo.ListPending", err)
+	}
+	return result, nil
 }
 
 // ListBySchedule возвращает напоминания для расписания за период.
@@ -90,7 +98,11 @@ func (r *Repository) ListBySchedule(ctx context.Context, scheduleID int64, from,
 		WHERE schedule_id = $1 AND scheduled_at BETWEEN $2 AND $3
 		ORDER BY scheduled_at ASC`
 
-	return queryList(ctx, r.db, q, scheduleID, from, to)
+	result, err := queryList(ctx, r.db, q, scheduleID, from, to)
+	if err != nil {
+		return nil, apperrors.DB("reminderrepo.ListBySchedule", err)
+	}
+	return result, nil
 }
 
 // Create создаёт новое напоминание.
@@ -105,7 +117,7 @@ func (r *Repository) Create(ctx context.Context, rem *reminder.Reminder) error {
 		rem.ScheduledAt, rem.Status, rem.IdempotencyKey,
 	).Scan(&rem.ID, &rem.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("reminderrepo.Create: %w", err)
+		return apperrors.DB("reminderrepo.Create", err)
 	}
 	return nil
 }
@@ -118,7 +130,7 @@ func (r *Repository) UpdateStatus(ctx context.Context, id int64, scheduledAt tim
 
 	res, err := r.db.ExecContext(ctx, q, status, id, scheduledAt)
 	if err != nil {
-		return fmt.Errorf("reminderrepo.UpdateStatus: %w", err)
+		return apperrors.DB("reminderrepo.UpdateStatus", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -135,7 +147,7 @@ func (r *Repository) IncrementRetry(ctx context.Context, id int64, scheduledAt t
 
 	res, err := r.db.ExecContext(ctx, q, id, scheduledAt)
 	if err != nil {
-		return fmt.Errorf("reminderrepo.IncrementRetry: %w", err)
+		return apperrors.DB("reminderrepo.IncrementRetry", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -152,7 +164,7 @@ func (r *Repository) IncrementPostpone(ctx context.Context, id int64, scheduledA
 
 	res, err := r.db.ExecContext(ctx, q, id, scheduledAt)
 	if err != nil {
-		return fmt.Errorf("reminderrepo.IncrementPostpone: %w", err)
+		return apperrors.DB("reminderrepo.IncrementPostpone", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -183,7 +195,7 @@ func scanReminder(s scanner) (*reminder.Reminder, error) {
 func queryList(ctx context.Context, db *sql.DB, q string, args ...any) ([]reminder.Reminder, error) {
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("reminderrepo: query: %w", err)
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -191,7 +203,7 @@ func queryList(ctx context.Context, db *sql.DB, q string, args ...any) ([]remind
 	for rows.Next() {
 		rem, err := scanReminder(rows)
 		if err != nil {
-			return nil, fmt.Errorf("reminderrepo: scan: %w", err)
+			return nil, err
 		}
 		result = append(result, *rem)
 	}

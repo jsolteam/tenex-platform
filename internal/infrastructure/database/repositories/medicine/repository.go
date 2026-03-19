@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	"github.com/jsolteam/tenex-platform/internal/domain/medicine"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
 type Repository struct {
@@ -32,7 +32,7 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (*medicine.Medicine,
 		return nil, medicine.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("medicinerepo.GetByID: %w", err)
+		return nil, apperrors.DB("medicinerepo.GetByID", err)
 	}
 	return m, nil
 }
@@ -47,7 +47,7 @@ func (r *Repository) ListByUser(ctx context.Context, userID int64) ([]medicine.M
 
 	rows, err := r.db.QueryContext(ctx, q, userID)
 	if err != nil {
-		return nil, fmt.Errorf("medicinerepo.ListByUser: %w", err)
+		return nil, apperrors.DB("medicinerepo.ListByUser", err)
 	}
 	defer rows.Close()
 
@@ -57,11 +57,14 @@ func (r *Repository) ListByUser(ctx context.Context, userID int64) ([]medicine.M
 		if err = rows.Scan(
 			&m.ID, &m.UserID, &m.Name, &m.PhotoMediaID, &m.CreatedAt, &m.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("medicinerepo.ListByUser: scan: %w", err)
+			return nil, apperrors.DB("medicinerepo.ListByUser.scan", err)
 		}
 		result = append(result, m)
 	}
-	return result, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, apperrors.DB("medicinerepo.ListByUser.rows", err)
+	}
+	return result, nil
 }
 
 // Create создаёт новое лекарство.
@@ -74,7 +77,7 @@ func (r *Repository) Create(ctx context.Context, m *medicine.Medicine) error {
 	err := r.db.QueryRowContext(ctx, q, m.UserID, m.Name, m.PhotoMediaID).
 		Scan(&m.ID, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
-		return fmt.Errorf("medicinerepo.Create: %w", err)
+		return apperrors.DB("medicinerepo.Create", err)
 	}
 	return nil
 }
@@ -93,7 +96,7 @@ func (r *Repository) Update(ctx context.Context, m *medicine.Medicine) error {
 		return medicine.ErrNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("medicinerepo.Update: %w", err)
+		return apperrors.DB("medicinerepo.Update", err)
 	}
 	return nil
 }
@@ -104,7 +107,7 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 
 	res, err := r.db.ExecContext(ctx, q, id)
 	if err != nil {
-		return fmt.Errorf("medicinerepo.Delete: %w", err)
+		return apperrors.DB("medicinerepo.Delete", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {

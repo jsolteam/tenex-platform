@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	"github.com/jsolteam/tenex-platform/internal/domain/media"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
 type Repository struct {
@@ -32,7 +32,7 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (*media.Media, error
 		return nil, media.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("mediarepo.GetByID: %w", err)
+		return nil, apperrors.DB("mediarepo.GetByID", err)
 	}
 	return m, nil
 }
@@ -47,7 +47,7 @@ func (r *Repository) Create(ctx context.Context, m *media.Media) error {
 	err := r.db.QueryRowContext(ctx, q, m.OwnerUserID, m.MediaType).
 		Scan(&m.ID, &m.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("mediarepo.Create: %w", err)
+		return apperrors.DB("mediarepo.Create", err)
 	}
 	return nil
 }
@@ -58,7 +58,7 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 
 	res, err := r.db.ExecContext(ctx, q, id)
 	if err != nil {
-		return fmt.Errorf("mediarepo.Delete: %w", err)
+		return apperrors.DB("mediarepo.Delete", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -77,7 +77,7 @@ func (r *Repository) GetVariants(ctx context.Context, mediaID int64) ([]media.Me
 
 	rows, err := r.db.QueryContext(ctx, q, mediaID)
 	if err != nil {
-		return nil, fmt.Errorf("mediarepo.GetVariants: %w", err)
+		return nil, apperrors.DB("mediarepo.GetVariants", err)
 	}
 	defer rows.Close()
 
@@ -87,11 +87,14 @@ func (r *Repository) GetVariants(ctx context.Context, mediaID int64) ([]media.Me
 		if err = rows.Scan(
 			&v.ID, &v.MediaID, &v.StorageType, &v.Messenger, &v.ExternalID, &v.URL, &v.CreatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("mediarepo.GetVariants: scan: %w", err)
+			return nil, apperrors.DB("mediarepo.GetVariants.scan", err)
 		}
 		variants = append(variants, v)
 	}
-	return variants, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, apperrors.DB("mediarepo.GetVariants.rows", err)
+	}
+	return variants, nil
 }
 
 // GetVariantByStorage возвращает вариант по типу хранилища и мессенджеру.
@@ -109,7 +112,7 @@ func (r *Repository) GetVariantByStorage(ctx context.Context, mediaID int64, sto
 		return nil, media.ErrVariantNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("mediarepo.GetVariantByStorage: %w", err)
+		return nil, apperrors.DB("mediarepo.GetVariantByStorage", err)
 	}
 	return v, nil
 }
@@ -125,7 +128,7 @@ func (r *Repository) AddVariant(ctx context.Context, v *media.MediaVariant) erro
 		v.MediaID, v.StorageType, v.Messenger, v.ExternalID, v.URL,
 	).Scan(&v.ID, &v.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("mediarepo.AddVariant: %w", err)
+		return apperrors.DB("mediarepo.AddVariant", err)
 	}
 	return nil
 }
@@ -136,7 +139,7 @@ func (r *Repository) DeleteVariant(ctx context.Context, id int64) error {
 
 	res, err := r.db.ExecContext(ctx, q, id)
 	if err != nil {
-		return fmt.Errorf("mediarepo.DeleteVariant: %w", err)
+		return apperrors.DB("mediarepo.DeleteVariant", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
