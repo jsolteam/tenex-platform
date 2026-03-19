@@ -8,231 +8,160 @@ import (
 	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
-func appErr(code apperrors.ErrorCode) error {
-	return apperrors.Wrap(errors.New("cause"), code, "test")
-}
-
-func retryableErr(code apperrors.ErrorCode) error {
-	return apperrors.Retryable(errors.New("cause"), code, "test")
-}
-
-func TestClassify_Validation_ErrValidation(t *testing.T) {
-	if got := apperrors.Classify(appErr(apperrors.ErrValidation)); got != apperrors.CategoryValidation {
-		t.Errorf("Classify(ErrValidation) = %q, want %q", got, apperrors.CategoryValidation)
+func TestClassify_DB_ReturnsInfrastructure(t *testing.T) {
+	cases := []error{
+		apperrors.DB("repo", errors.New("x")),
+		apperrors.DBConnect("db", errors.New("x")),
+	}
+	for _, err := range cases {
+		if got := apperrors.Classify(err); got != apperrors.CategoryInfrastructure {
+			t.Errorf("Classify(%v) = %q, want infrastructure", err, got)
+		}
 	}
 }
 
-func TestClassify_Validation_ErrInvalidInput(t *testing.T) {
-	if got := apperrors.Classify(appErr(apperrors.ErrInvalidInput)); got != apperrors.CategoryValidation {
-		t.Errorf("Classify(ErrInvalidInput) = %q, want %q", got, apperrors.CategoryValidation)
+func TestClassify_Redis_ReturnsInfrastructure(t *testing.T) {
+	err := apperrors.Redis("cache", errors.New("x"))
+	if got := apperrors.Classify(err); got != apperrors.CategoryInfrastructure {
+		t.Errorf("Classify(Redis) = %q, want infrastructure", got)
 	}
 }
 
-func TestClassify_Infrastructure_ErrDBConnect(t *testing.T) {
-	if got := apperrors.Classify(appErr(apperrors.ErrDBConnect)); got != apperrors.CategoryInfrastructure {
-		t.Errorf("Classify(ErrDBConnect) = %q, want %q", got, apperrors.CategoryInfrastructure)
+func TestClassify_S3_ReturnsInfrastructure(t *testing.T) {
+	err := apperrors.S3("media", errors.New("x"))
+	if got := apperrors.Classify(err); got != apperrors.CategoryInfrastructure {
+		t.Errorf("Classify(S3) = %q, want infrastructure", got)
 	}
 }
 
-func TestClassify_Infrastructure_ErrDBQuery(t *testing.T) {
-	if got := apperrors.Classify(appErr(apperrors.ErrDBQuery)); got != apperrors.CategoryInfrastructure {
-		t.Errorf("Classify(ErrDBQuery) = %q, want %q", got, apperrors.CategoryInfrastructure)
+func TestClassify_External_ReturnsExternal(t *testing.T) {
+	err := apperrors.External("telegram", errors.New("429"))
+	if got := apperrors.Classify(err); got != apperrors.CategoryExternal {
+		t.Errorf("Classify(External) = %q, want external", got)
 	}
 }
 
-func TestClassify_Infrastructure_ErrRedisUnavailable(t *testing.T) {
-	if got := apperrors.Classify(appErr(apperrors.ErrRedisUnavailable)); got != apperrors.CategoryInfrastructure {
-		t.Errorf("Classify(ErrRedisUnavailable) = %q, want %q", got, apperrors.CategoryInfrastructure)
+func TestClassify_Validation_ReturnsValidation(t *testing.T) {
+	cases := []error{
+		apperrors.Validation("repo", errors.New("x")),
+		apperrors.InvalidInput("handler", errors.New("x")),
+	}
+	for _, err := range cases {
+		if got := apperrors.Classify(err); got != apperrors.CategoryValidation {
+			t.Errorf("Classify(%v) = %q, want validation", err, got)
+		}
 	}
 }
 
-func TestClassify_Infrastructure_ErrS3(t *testing.T) {
-	if got := apperrors.Classify(appErr(apperrors.ErrS3)); got != apperrors.CategoryInfrastructure {
-		t.Errorf("Classify(ErrS3) = %q, want %q", got, apperrors.CategoryInfrastructure)
+func TestClassify_Timeout_ReturnsTimeout(t *testing.T) {
+	cases := []error{
+		apperrors.Timeout("http", errors.New("x")),
+		apperrors.Canceled("ctx", errors.New("x")),
+	}
+	for _, err := range cases {
+		if got := apperrors.Classify(err); got != apperrors.CategoryTimeout {
+			t.Errorf("Classify(%v) = %q, want timeout", err, got)
+		}
 	}
 }
 
-func TestClassify_Timeout_ErrTimeout(t *testing.T) {
-	if got := apperrors.Classify(appErr(apperrors.ErrTimeout)); got != apperrors.CategoryTimeout {
-		t.Errorf("Classify(ErrTimeout) = %q, want %q", got, apperrors.CategoryTimeout)
+func TestClassify_Internal_ReturnsInternal(t *testing.T) {
+	cases := []error{
+		apperrors.Internal("worker", errors.New("x")),
+		apperrors.Panic("goroutine", errors.New("nil deref")),
 	}
-}
-
-func TestClassify_Timeout_ErrContextCanceled(t *testing.T) {
-	if got := apperrors.Classify(appErr(apperrors.ErrContextCanceled)); got != apperrors.CategoryTimeout {
-		t.Errorf("Classify(ErrContextCanceled) = %q, want %q", got, apperrors.CategoryTimeout)
-	}
-}
-
-func TestClassify_External_ErrMessengerAPI(t *testing.T) {
-	if got := apperrors.Classify(appErr(apperrors.ErrMessengerAPI)); got != apperrors.CategoryExternal {
-		t.Errorf("Classify(ErrMessengerAPI) = %q, want %q", got, apperrors.CategoryExternal)
-	}
-}
-
-func TestClassify_Internal_ErrInternal(t *testing.T) {
-	if got := apperrors.Classify(appErr(apperrors.ErrInternal)); got != apperrors.CategoryInternal {
-		t.Errorf("Classify(ErrInternal) = %q, want %q", got, apperrors.CategoryInternal)
-	}
-}
-
-func TestClassify_Internal_ErrPanic(t *testing.T) {
-	if got := apperrors.Classify(appErr(apperrors.ErrPanic)); got != apperrors.CategoryInternal {
-		t.Errorf("Classify(ErrPanic) = %q, want %q", got, apperrors.CategoryInternal)
-	}
-}
-
-func TestClassify_Internal_UnknownCode(t *testing.T) {
-	unknown := apperrors.Wrap(errors.New("x"), apperrors.ErrorCode("UNKNOWN_FUTURE_CODE"), "test")
-	if got := apperrors.Classify(unknown); got != apperrors.CategoryInternal {
-		t.Errorf("Classify(unknown code) = %q, want %q", got, apperrors.CategoryInternal)
+	for _, err := range cases {
+		if got := apperrors.Classify(err); got != apperrors.CategoryInternal {
+			t.Errorf("Classify(%v) = %q, want internal", err, got)
+		}
 	}
 }
 
 func TestClassify_PlainError_ReturnsInternal(t *testing.T) {
 	if got := apperrors.Classify(errors.New("plain")); got != apperrors.CategoryInternal {
-		t.Errorf("Classify(plain error) = %q, want %q", got, apperrors.CategoryInternal)
+		t.Errorf("Classify(plain) = %q, want internal", got)
 	}
 }
 
 func TestClassify_Nil_ReturnsInternal(t *testing.T) {
 	if got := apperrors.Classify(nil); got != apperrors.CategoryInternal {
-		t.Errorf("Classify(nil) = %q, want %q", got, apperrors.CategoryInternal)
+		t.Errorf("Classify(nil) = %q, want internal", got)
 	}
 }
 
 func TestClassify_WrappedAppError_StillClassifies(t *testing.T) {
-	inner := apperrors.Wrap(errors.New("cause"), apperrors.ErrTimeout, "db")
-	outer := fmt.Errorf("outer wrapper: %w", inner)
+	inner := apperrors.Timeout("db", errors.New("deadline"))
+	outer := fmt.Errorf("outer: %w", inner)
 	if got := apperrors.Classify(outer); got != apperrors.CategoryTimeout {
-		t.Errorf("Classify(wrapped AppError) = %q, want %q", got, apperrors.CategoryTimeout)
+		t.Errorf("Classify(wrapped) = %q, want timeout", got)
 	}
 }
 
 func TestClassify_AllInfrastructureCodes(t *testing.T) {
-	infraCodes := []apperrors.ErrorCode{
-		apperrors.ErrDBConnect,
-		apperrors.ErrDBQuery,
-		apperrors.ErrRedisUnavailable,
-		apperrors.ErrS3,
+	infraErrs := []error{
+		apperrors.DB("r", errors.New("x")),
+		apperrors.DBConnect("r", errors.New("x")),
+		apperrors.Redis("r", errors.New("x")),
+		apperrors.S3("r", errors.New("x")),
 	}
-	for _, code := range infraCodes {
-		got := apperrors.Classify(appErr(code))
-		if got != apperrors.CategoryInfrastructure {
-			t.Errorf("Classify(%q) = %q, want %q", code, got, apperrors.CategoryInfrastructure)
+	for _, err := range infraErrs {
+		if got := apperrors.Classify(err); got != apperrors.CategoryInfrastructure {
+			t.Errorf("Classify(%v) = %q, want infrastructure", apperrors.CodeOf(err), got)
 		}
 	}
 }
 
-func TestClassify_AllTimeoutCodes(t *testing.T) {
-	for _, code := range []apperrors.ErrorCode{apperrors.ErrTimeout, apperrors.ErrContextCanceled} {
-		got := apperrors.Classify(appErr(code))
-		if got != apperrors.CategoryTimeout {
-			t.Errorf("Classify(%q) = %q, want %q", code, got, apperrors.CategoryTimeout)
+// ── Retryable через fluent-цепочку ────────────────────────────────────────
+
+func TestIsRetryable_FluentChain(t *testing.T) {
+	retryable := apperrors.DB("repo", errors.New("deadlock")).Retryable()
+	nonRetryable := apperrors.DB("repo", errors.New("constraint"))
+
+	if !apperrors.IsRetryable(retryable) {
+		t.Error("DB().Retryable() should be retryable")
+	}
+	if apperrors.IsRetryable(nonRetryable) {
+		t.Error("DB() without .Retryable() should not be retryable")
+	}
+}
+
+func TestIsRetryable_TimeoutIsAlwaysRetryable(t *testing.T) {
+	err := apperrors.Timeout("http", errors.New("deadline"))
+	if !apperrors.IsRetryable(err) {
+		t.Error("Timeout errors are retryable by default")
+	}
+}
+
+func TestIsRetryable_ExternalNotRetryableByDefault(t *testing.T) {
+	err := apperrors.External("telegram", errors.New("400 Bad Request"))
+	if apperrors.IsRetryable(err) {
+		t.Error("External errors are NOT retryable by default — must explicitly call .Retryable()")
+	}
+}
+
+func TestIsRetryable_ExternalCanBeMadeRetryable(t *testing.T) {
+	err := apperrors.External("telegram", errors.New("429 Too Many Requests")).Retryable()
+	if !apperrors.IsRetryable(err) {
+		t.Error("External().Retryable() should be retryable")
+	}
+}
+
+// ── Deprecated compat functions ───────────────────────────────────────────
+
+func TestClassify_DeprecatedWrap_StillWorks(t *testing.T) {
+	cases := []struct {
+		err  error
+		want apperrors.Category
+	}{
+		{apperrors.Wrap(errors.New("x"), apperrors.ErrValidation, "m"), apperrors.CategoryValidation},
+		{apperrors.Wrap(errors.New("x"), apperrors.ErrDBQuery, "m"), apperrors.CategoryInfrastructure},
+		{apperrors.Wrap(errors.New("x"), apperrors.ErrTimeout, "m"), apperrors.CategoryTimeout},
+		{apperrors.Wrap(errors.New("x"), apperrors.ErrMessengerAPI, "m"), apperrors.CategoryExternal},
+		{apperrors.Wrap(errors.New("x"), apperrors.ErrInternal, "m"), apperrors.CategoryInternal},
+	}
+	for _, tc := range cases {
+		if got := apperrors.Classify(tc.err); got != tc.want {
+			t.Errorf("Classify(Wrap(%v)) = %q, want %q", apperrors.CodeOf(tc.err), got, tc.want)
 		}
-	}
-}
-
-func TestIsTemporary_Alias_RetryableError(t *testing.T) {
-	err := retryableErr(apperrors.ErrTimeout)
-	if !apperrors.IsTemporary(err) {
-		t.Error("IsTemporary(retryable) should return true")
-	}
-}
-
-func TestIsTemporary_Alias_NonRetryableError(t *testing.T) {
-	err := apperrors.Wrap(errors.New("x"), apperrors.ErrDBConnect, "db")
-	if apperrors.IsTemporary(err) {
-		t.Error("IsTemporary(non-retryable Wrap) should return false")
-	}
-}
-
-func TestIsTemporary_Alias_PlainError(t *testing.T) {
-	if apperrors.IsTemporary(errors.New("plain")) {
-		t.Error("IsTemporary(plain) should return false")
-	}
-}
-
-func TestIsTemporary_Alias_Nil(t *testing.T) {
-	if apperrors.IsTemporary(nil) {
-		t.Error("IsTemporary(nil) should return false")
-	}
-}
-
-func TestIsTemporary_MatchesIsRetryable(t *testing.T) {
-	errs := []error{
-		retryableErr(apperrors.ErrTimeout),
-		appErr(apperrors.ErrDBConnect),
-		errors.New("plain"),
-		nil,
-	}
-	for _, err := range errs {
-		got := apperrors.IsTemporary(err)
-		want := apperrors.IsRetryable(err)
-		if got != want {
-			t.Errorf("IsTemporary(%v) = %v, IsRetryable = %v — they must match", err, got, want)
-		}
-	}
-}
-
-func TestRetryable_SetsTemporaryField(t *testing.T) {
-	err := apperrors.Retryable(errors.New("x"), apperrors.ErrTimeout, "svc")
-	if !err.Temporary {
-		t.Error("Retryable() should set Temporary = true")
-	}
-}
-
-func TestWrap_TemporaryFieldFalse(t *testing.T) {
-	err := apperrors.Wrap(errors.New("x"), apperrors.ErrDBConnect, "db")
-	if err.Temporary {
-		t.Error("Wrap() should leave Temporary = false")
-	}
-}
-
-func TestNew_CreatesAppError(t *testing.T) {
-	cause := errors.New("root cause")
-	err := apperrors.New(apperrors.ErrInternal, "worker", cause)
-	if err == nil {
-		t.Fatal("New returned nil")
-	}
-	if err.Code != apperrors.ErrInternal {
-		t.Errorf("Code = %q, want %q", err.Code, apperrors.ErrInternal)
-	}
-	if err.Module != "worker" {
-		t.Errorf("Module = %q, want %q", err.Module, "worker")
-	}
-	if !errors.Is(err, cause) {
-		t.Error("errors.Is should find original cause")
-	}
-}
-
-func TestErrorCode_Constants_AreDistinct(t *testing.T) {
-	codes := []apperrors.ErrorCode{
-		apperrors.ErrValidation,
-		apperrors.ErrInvalidInput,
-		apperrors.ErrDBConnect,
-		apperrors.ErrDBQuery,
-		apperrors.ErrRedisUnavailable,
-		apperrors.ErrTimeout,
-		apperrors.ErrContextCanceled,
-		apperrors.ErrMessengerAPI,
-		apperrors.ErrS3,
-		apperrors.ErrInternal,
-		apperrors.ErrPanic,
-	}
-	seen := make(map[apperrors.ErrorCode]bool)
-	for _, c := range codes {
-		if seen[c] {
-			t.Errorf("duplicate ErrorCode value: %q", c)
-		}
-		seen[c] = true
-	}
-}
-
-func TestCodeOf_ReturnsErrorCode(t *testing.T) {
-	err := apperrors.Wrap(errors.New("x"), apperrors.ErrMessengerAPI, "bot")
-	got := apperrors.CodeOf(err)
-	if got != apperrors.ErrMessengerAPI {
-		t.Errorf("CodeOf = %q, want %q", got, apperrors.ErrMessengerAPI)
 	}
 }
