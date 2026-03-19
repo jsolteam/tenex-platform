@@ -20,9 +20,12 @@ import (
 	schedulerepo "github.com/jsolteam/tenex-platform/internal/infrastructure/database/repositories/schedule"
 	userrepo "github.com/jsolteam/tenex-platform/internal/infrastructure/database/repositories/user"
 	watcherrepo "github.com/jsolteam/tenex-platform/internal/infrastructure/database/repositories/watcher"
+
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
 
-// Repositories — все репозитории платформы
+// Repositories — все репозитории платформы.
 type Repositories struct {
 	User      user.Repository
 	UserStats user.StatisticsRepository
@@ -35,16 +38,16 @@ type Repositories struct {
 	Config    config.Repository
 }
 
-func New(db *sql.DB) *Repositories {
+func New(db *sql.DB, log *core.Logger, tracer tracing.Tracer) *Repositories {
 	return &Repositories{
-		User:      userrepo.New(db),
-		UserStats: userrepo.NewStatistics(db),
-		Media:     mediarepo.New(db),
-		Medicine:  medicinerepo.New(db),
-		Schedule:  schedulerepo.New(db),
-		Reminder:  reminderrepo.New(db),
-		Intake:    intakerepo.New(db),
-		Watcher:   watcherrepo.New(db),
-		Config:    configrepo.New(db),
+		User:      userrepo.New(db, log, tracer),
+		UserStats: userrepo.NewStatistics(db, log, tracer),
+		Media:     mediarepo.New(db, log, tracer),
+		Medicine:  medicinerepo.New(db, log, tracer),
+		Schedule:  schedulerepo.New(db, log, tracer),
+		Reminder:  reminderrepo.New(db, log, tracer),
+		Intake:    intakerepo.New(db, log, tracer),
+		Watcher:   watcherrepo.New(db, log, tracer),
+		Config:    configrepo.New(db, log, tracer),
 	}
 }
