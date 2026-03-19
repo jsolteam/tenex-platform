@@ -7,6 +7,8 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
 const (
@@ -39,7 +41,7 @@ type DB struct {
 func Open(ctx context.Context, cfg Config) (*sql.DB, error) {
 	db, err := sql.Open("postgres", cfg.DSN())
 	if err != nil {
-		return nil, fmt.Errorf("database: open: %w", err)
+		return nil, apperrors.DBConnect("database.Open", err)
 	}
 
 	db.SetMaxOpenConns(defaultMaxOpenConns)
@@ -51,7 +53,7 @@ func Open(ctx context.Context, cfg Config) (*sql.DB, error) {
 
 	if err := db.PingContext(pingCtx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("database: ping: %w", err)
+		return nil, apperrors.DBConnect("database.Open.ping", err)
 	}
 	return db, nil
 }
@@ -63,7 +65,7 @@ func OpenAndMigrate(ctx context.Context, cfg Config) (*sql.DB, error) {
 	}
 	if err := New(db).Up(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("database: migrate: %w", err)
+		return nil, apperrors.DBConnect("database.OpenAndMigrate.migrate", err)
 	}
 	return db, nil
 }
