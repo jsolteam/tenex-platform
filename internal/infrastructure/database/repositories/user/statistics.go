@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -11,30 +12,36 @@ import (
 	"github.com/jsolteam/tenex-platform/internal/infrastructure/repolog"
 	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
+
+const statsRepoName = "user_statistics"
 
 type StatisticsRepository struct {
 	db     *sql.DB
 	log    *core.Logger
 	tracer tracing.Tracer
+	met    *metrics.DBMetrics
 }
 
-func NewStatistics(db *sql.DB, log *core.Logger, tracer tracing.Tracer) *StatisticsRepository {
+func NewStatistics(db *sql.DB, log *core.Logger, tracer tracing.Tracer, met *metrics.DBMetrics) *StatisticsRepository {
 	return &StatisticsRepository{
 		db:     db,
-		log:    log.With(zap.String("repo", "user_statistics")),
+		log:    log.With(zap.String("repo", statsRepoName)),
 		tracer: tracer,
+		met:    met,
 	}
 }
 
 func (r *StatisticsRepository) GetByUserID(ctx context.Context, userID int64) (*user.UserStatistics, error) {
-	ctx, span := r.tracer.Start(ctx, "userrepo.GetStatsByUserID")
+	const method = "GetByUserID"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "userrepo.stats."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, statsRepoName, method, time.Since(start).Seconds()) }()
 
-	const q = `
-		SELECT user_id, total_reminders, confirmed, skipped, adherence_rate, updated_at
-		FROM user_statistics WHERE user_id = $1`
+	const q = `SELECT user_id, total_reminders, confirmed, skipped, adherence_rate, updated_at FROM user_statistics WHERE user_id = $1`
 
 	s := &user.UserStatistics{}
 	err := r.db.QueryRowContext(ctx, q, userID).Scan(
@@ -45,16 +52,19 @@ func (r *StatisticsRepository) GetByUserID(ctx context.Context, userID int64) (*
 		return nil, user.ErrNotFound
 	}
 	if err != nil {
-		appErr := apperrors.DB("userrepo.GetStatsByUserID", err)
-		repolog.Err(ctx, r.log, span, "failed to get user statistics", appErr, zap.Int64("user_id", userID))
+		appErr := apperrors.DB("userrepo.stats."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, statsRepoName, method, "failed to get user statistics", appErr, zap.Int64("user_id", userID))
 		return nil, appErr
 	}
 	return s, nil
 }
 
 func (r *StatisticsRepository) Upsert(ctx context.Context, s *user.UserStatistics) error {
-	ctx, span := r.tracer.Start(ctx, "userrepo.UpsertStats")
+	const method = "Upsert"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "userrepo.stats."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, statsRepoName, method, time.Since(start).Seconds()) }()
 
 	const q = `
 		INSERT INTO user_statistics (user_id, total_reminders, confirmed, skipped, adherence_rate, updated_at)
@@ -75,8 +85,8 @@ func (r *StatisticsRepository) Upsert(ctx context.Context, s *user.UserStatistic
 		s.UserID, s.TotalReminders, s.Confirmed, s.Skipped, s.AdherenceRate,
 	).Scan(&s.UpdatedAt)
 	if err != nil {
-		appErr := apperrors.DB("userrepo.UpsertStats", err)
-		repolog.Err(ctx, r.log, span, "failed to upsert user statistics", appErr, zap.Int64("user_id", s.UserID))
+		appErr := apperrors.DB("userrepo.stats."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, statsRepoName, method, "failed to upsert user statistics", appErr, zap.Int64("user_id", s.UserID))
 		return appErr
 	}
 	return nil

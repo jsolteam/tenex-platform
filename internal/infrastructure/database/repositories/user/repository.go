@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/lib/pq"
 	"go.uber.org/zap"
@@ -12,26 +13,34 @@ import (
 	"github.com/jsolteam/tenex-platform/internal/infrastructure/repolog"
 	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
+
+const repoName = "user"
 
 type Repository struct {
 	db     *sql.DB
 	log    *core.Logger
 	tracer tracing.Tracer
+	met    *metrics.DBMetrics
 }
 
-func New(db *sql.DB, log *core.Logger, tracer tracing.Tracer) *Repository {
+func New(db *sql.DB, log *core.Logger, tracer tracing.Tracer, met *metrics.DBMetrics) *Repository {
 	return &Repository{
 		db:     db,
-		log:    log.With(zap.String("repo", "user")),
+		log:    log.With(zap.String("repo", repoName)),
 		tracer: tracer,
+		met:    met,
 	}
 }
 
 func (r *Repository) GetByID(ctx context.Context, id int64) (*user.User, error) {
-	ctx, span := r.tracer.Start(ctx, "userrepo.GetByID")
+	const method = "GetByID"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "userrepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	const q = `SELECT id, timezone, language, created_at, updated_at FROM users WHERE id = $1`
 
@@ -44,16 +53,19 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (*user.User, error) 
 		return nil, user.ErrNotFound
 	}
 	if err != nil {
-		appErr := apperrors.DB("userrepo.GetByID", err)
-		repolog.Err(ctx, r.log, span, "failed to get user", appErr, zap.Int64("id", id))
+		appErr := apperrors.DB("userrepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to get user", appErr, zap.Int64("id", id))
 		return nil, appErr
 	}
 	return u, nil
 }
 
 func (r *Repository) GetByMessenger(ctx context.Context, messengerType user.MessengerType, messengerUserID string) (*user.User, error) {
-	ctx, span := r.tracer.Start(ctx, "userrepo.GetByMessenger")
+	const method = "GetByMessenger"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "userrepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	const q = `
 		SELECT u.id, u.timezone, u.language, u.created_at, u.updated_at
@@ -73,8 +85,8 @@ func (r *Repository) GetByMessenger(ctx context.Context, messengerType user.Mess
 		return nil, user.ErrNotFound
 	}
 	if err != nil {
-		appErr := apperrors.DB("userrepo.GetByMessenger", err)
-		repolog.Err(ctx, r.log, span, "failed to get user by messenger", appErr,
+		appErr := apperrors.DB("userrepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to get user by messenger", appErr,
 			zap.String("messenger_type", string(messengerType)),
 		)
 		return nil, appErr
@@ -83,13 +95,16 @@ func (r *Repository) GetByMessenger(ctx context.Context, messengerType user.Mess
 }
 
 func (r *Repository) Create(ctx context.Context, u *user.User, contact *user.UserContact) (retErr error) {
-	ctx, span := r.tracer.Start(ctx, "userrepo.Create")
+	const method = "Create"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "userrepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		appErr := apperrors.DBConnect("userrepo.Create.begin", err)
-		repolog.Err(ctx, r.log, span, "failed to begin transaction", appErr)
+		appErr := apperrors.DBConnect("userrepo."+method+".begin", err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to begin transaction", appErr)
 		return appErr
 	}
 	defer func() {
@@ -98,14 +113,12 @@ func (r *Repository) Create(ctx context.Context, u *user.User, contact *user.Use
 		}
 	}()
 
-	const qUser = `
-		INSERT INTO users (timezone, language) VALUES ($1, $2)
-		RETURNING id, created_at, updated_at`
+	const qUser = `INSERT INTO users (timezone, language) VALUES ($1, $2) RETURNING id, created_at, updated_at`
 
 	if err = tx.QueryRowContext(ctx, qUser, u.Timezone, u.Language).
 		Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt); err != nil {
-		appErr := apperrors.DB("userrepo.Create.insertUser", err)
-		repolog.Err(ctx, r.log, span, "failed to insert user", appErr)
+		appErr := apperrors.DB("userrepo."+method+".insertUser", err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to insert user", appErr)
 		retErr = appErr
 		return
 	}
@@ -122,30 +135,33 @@ func (r *Repository) Create(ctx context.Context, u *user.User, contact *user.Use
 		contact.Username, contact.IsPrimary,
 	).Scan(&contact.ID, &contact.CreatedAt); err != nil {
 		if isUniqueViolation(err) {
-			appErr := apperrors.Validation("userrepo.Create.insertContact", user.ErrContactAlreadyExists)
-			repolog.Err(ctx, r.log, span, "contact already exists on create", appErr,
+			appErr := apperrors.Validation("userrepo."+method+".insertContact", user.ErrContactAlreadyExists)
+			repolog.Err(ctx, r.log, span, r.met, repoName, method, "contact already exists on create", appErr,
 				zap.String("messenger_type", string(contact.MessengerType)),
 			)
 			retErr = appErr
 			return
 		}
-		appErr := apperrors.DB("userrepo.Create.insertContact", err)
-		repolog.Err(ctx, r.log, span, "failed to insert contact", appErr)
+		appErr := apperrors.DB("userrepo."+method+".insertContact", err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to insert contact", appErr)
 		retErr = appErr
 		return
 	}
 
 	if err = tx.Commit(); err != nil {
-		appErr := apperrors.DB("userrepo.Create.commit", err)
-		repolog.Err(ctx, r.log, span, "failed to commit create user", appErr)
+		appErr := apperrors.DB("userrepo."+method+".commit", err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to commit create user", appErr)
 		retErr = appErr
 	}
 	return
 }
 
 func (r *Repository) Update(ctx context.Context, u *user.User) error {
-	ctx, span := r.tracer.Start(ctx, "userrepo.Update")
+	const method = "Update"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "userrepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	const q = `
 		UPDATE users SET timezone = $1, language = $2, updated_at = now()
@@ -157,26 +173,28 @@ func (r *Repository) Update(ctx context.Context, u *user.User) error {
 		return user.ErrNotFound
 	}
 	if err != nil {
-		appErr := apperrors.DB("userrepo.Update", err)
-		repolog.Err(ctx, r.log, span, "failed to update user", appErr, zap.Int64("id", u.ID))
+		appErr := apperrors.DB("userrepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to update user", appErr, zap.Int64("id", u.ID))
 		return appErr
 	}
 	return nil
 }
 
 func (r *Repository) GetContacts(ctx context.Context, userID int64) ([]user.UserContact, error) {
-	ctx, span := r.tracer.Start(ctx, "userrepo.GetContacts")
+	const method = "GetContacts"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "userrepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	const q = `
 		SELECT id, user_id, messenger_type, messenger_user_id, username, is_primary, created_at
-		FROM user_contacts WHERE user_id = $1
-		ORDER BY is_primary DESC, created_at ASC`
+		FROM user_contacts WHERE user_id = $1 ORDER BY is_primary DESC, created_at ASC`
 
 	rows, err := r.db.QueryContext(ctx, q, userID)
 	if err != nil {
-		appErr := apperrors.DB("userrepo.GetContacts", err)
-		repolog.Err(ctx, r.log, span, "failed to query contacts", appErr, zap.Int64("user_id", userID))
+		appErr := apperrors.DB("userrepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to query contacts", appErr, zap.Int64("user_id", userID))
 		return nil, appErr
 	}
 	defer rows.Close()
@@ -188,23 +206,26 @@ func (r *Repository) GetContacts(ctx context.Context, userID int64) ([]user.User
 			&c.ID, &c.UserID, &c.MessengerType, &c.MessengerUserID,
 			&c.Username, &c.IsPrimary, &c.CreatedAt,
 		); err != nil {
-			appErr := apperrors.DB("userrepo.GetContacts.scan", err)
-			repolog.Err(ctx, r.log, span, "failed to scan contact", appErr, zap.Int64("user_id", userID))
+			appErr := apperrors.DB("userrepo."+method+".scan", err)
+			repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to scan contact", appErr, zap.Int64("user_id", userID))
 			return nil, appErr
 		}
 		contacts = append(contacts, c)
 	}
 	if err = rows.Err(); err != nil {
-		appErr := apperrors.DB("userrepo.GetContacts.rows", err)
-		repolog.Err(ctx, r.log, span, "contacts rows error", appErr, zap.Int64("user_id", userID))
+		appErr := apperrors.DB("userrepo."+method+".rows", err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "contacts rows error", appErr, zap.Int64("user_id", userID))
 		return nil, appErr
 	}
 	return contacts, nil
 }
 
 func (r *Repository) AddContact(ctx context.Context, contact *user.UserContact) error {
-	ctx, span := r.tracer.Start(ctx, "userrepo.AddContact")
+	const method = "AddContact"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "userrepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	const q = `
 		INSERT INTO user_contacts (user_id, messenger_type, messenger_user_id, username, is_primary)
@@ -216,28 +237,31 @@ func (r *Repository) AddContact(ctx context.Context, contact *user.UserContact) 
 	).Scan(&contact.ID, &contact.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
-			appErr := apperrors.Validation("userrepo.AddContact", user.ErrContactAlreadyExists)
-			repolog.Err(ctx, r.log, span, "contact already exists", appErr,
+			appErr := apperrors.Validation("userrepo."+method, user.ErrContactAlreadyExists)
+			repolog.Err(ctx, r.log, span, r.met, repoName, method, "contact already exists", appErr,
 				zap.Int64("user_id", contact.UserID),
 				zap.String("messenger_type", string(contact.MessengerType)),
 			)
 			return appErr
 		}
-		appErr := apperrors.DB("userrepo.AddContact", err)
-		repolog.Err(ctx, r.log, span, "failed to add contact", appErr, zap.Int64("user_id", contact.UserID))
+		appErr := apperrors.DB("userrepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to add contact", appErr, zap.Int64("user_id", contact.UserID))
 		return appErr
 	}
 	return nil
 }
 
 func (r *Repository) SetPrimaryContact(ctx context.Context, userID, contactID int64) (retErr error) {
-	ctx, span := r.tracer.Start(ctx, "userrepo.SetPrimaryContact")
+	const method = "SetPrimaryContact"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "userrepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		appErr := apperrors.DBConnect("userrepo.SetPrimaryContact.begin", err)
-		repolog.Err(ctx, r.log, span, "failed to begin transaction", appErr)
+		appErr := apperrors.DBConnect("userrepo."+method+".begin", err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to begin transaction", appErr)
 		return appErr
 	}
 	defer func() {
@@ -249,8 +273,8 @@ func (r *Repository) SetPrimaryContact(ctx context.Context, userID, contactID in
 	if _, err = tx.ExecContext(ctx,
 		`UPDATE user_contacts SET is_primary = false WHERE user_id = $1`, userID,
 	); err != nil {
-		appErr := apperrors.DB("userrepo.SetPrimaryContact.reset", err)
-		repolog.Err(ctx, r.log, span, "failed to reset primary contacts", appErr, zap.Int64("user_id", userID))
+		appErr := apperrors.DB("userrepo."+method+".reset", err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to reset primary contacts", appErr, zap.Int64("user_id", userID))
 		retErr = appErr
 		return
 	}
@@ -267,8 +291,8 @@ func (r *Repository) SetPrimaryContact(ctx context.Context, userID, contactID in
 		retErr = user.ErrContactNotFound
 		return
 	} else if err != nil {
-		appErr := apperrors.DB("userrepo.SetPrimaryContact.set", err)
-		repolog.Err(ctx, r.log, span, "failed to set primary contact", appErr,
+		appErr := apperrors.DB("userrepo."+method+".set", err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to set primary contact", appErr,
 			zap.Int64("user_id", userID),
 			zap.Int64("contact_id", contactID),
 		)
@@ -277,8 +301,8 @@ func (r *Repository) SetPrimaryContact(ctx context.Context, userID, contactID in
 	}
 
 	if err = tx.Commit(); err != nil {
-		appErr := apperrors.DB("userrepo.SetPrimaryContact.commit", err)
-		repolog.Err(ctx, r.log, span, "failed to commit set primary", appErr)
+		appErr := apperrors.DB("userrepo."+method+".commit", err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to commit set primary", appErr)
 		retErr = appErr
 	}
 	return

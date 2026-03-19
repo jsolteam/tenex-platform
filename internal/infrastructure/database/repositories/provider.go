@@ -22,6 +22,7 @@ import (
 	watcherrepo "github.com/jsolteam/tenex-platform/internal/infrastructure/database/repositories/watcher"
 
 	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
 
@@ -38,16 +39,17 @@ type Repositories struct {
 	Config    config.Repository
 }
 
-func New(db *sql.DB, log *core.Logger, tracer tracing.Tracer) *Repositories {
+// New создаёт все репозитории с полным набором observability-зависимостей.
+func New(db *sql.DB, log *core.Logger, tracer tracing.Tracer, met *metrics.DBMetrics) *Repositories {
 	return &Repositories{
-		User:      userrepo.New(db, log, tracer),
-		UserStats: userrepo.NewStatistics(db, log, tracer),
-		Media:     mediarepo.New(db, log, tracer),
-		Medicine:  medicinerepo.New(db, log, tracer),
-		Schedule:  schedulerepo.New(db, log, tracer),
-		Reminder:  reminderrepo.New(db, log, tracer),
-		Intake:    intakerepo.New(db, log, tracer),
-		Watcher:   watcherrepo.New(db, log, tracer),
-		Config:    configrepo.New(db, log, tracer),
+		User:      userrepo.New(db, log, tracer, met),
+		UserStats: userrepo.NewStatistics(db, log, tracer, met),
+		Media:     mediarepo.New(db, log, tracer, met),
+		Medicine:  medicinerepo.New(db, log, tracer, met),
+		Schedule:  schedulerepo.New(db, log, tracer, met),
+		Reminder:  reminderrepo.New(db, log, tracer, met),
+		Intake:    intakerepo.New(db, log, tracer, met),
+		Watcher:   watcherrepo.New(db, log, tracer, met),
+		Config:    configrepo.New(db, log, tracer, met),
 	}
 }
