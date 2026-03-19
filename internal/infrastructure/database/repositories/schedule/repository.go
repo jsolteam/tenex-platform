@@ -13,26 +13,34 @@ import (
 	"github.com/jsolteam/tenex-platform/internal/infrastructure/repolog"
 	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
+
+const repoName = "schedule"
 
 type Repository struct {
 	db     *sql.DB
 	log    *core.Logger
 	tracer tracing.Tracer
+	met    *metrics.DBMetrics
 }
 
-func New(db *sql.DB, log *core.Logger, tracer tracing.Tracer) *Repository {
+func New(db *sql.DB, log *core.Logger, tracer tracing.Tracer, met *metrics.DBMetrics) *Repository {
 	return &Repository{
 		db:     db,
-		log:    log.With(zap.String("repo", "schedule")),
+		log:    log.With(zap.String("repo", repoName)),
 		tracer: tracer,
+		met:    met,
 	}
 }
 
 func (r *Repository) GetByID(ctx context.Context, id int64) (*schedule.Schedule, error) {
-	ctx, span := r.tracer.Start(ctx, "schedulerepo.GetByID")
+	const method = "GetByID"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "schedulerepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	const q = `SELECT id, medicine_id, schedule_type, interval_days, days_of_week, times, start_date, end_date, created_at FROM schedules WHERE id = $1`
 
@@ -42,58 +50,65 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (*schedule.Schedule,
 		return nil, schedule.ErrNotFound
 	}
 	if err != nil {
-		appErr := apperrors.DB("schedulerepo.GetByID", err)
-		repolog.Err(ctx, r.log, span, "failed to get schedule", appErr, zap.Int64("id", id))
+		appErr := apperrors.DB("schedulerepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to get schedule", appErr, zap.Int64("id", id))
 		return nil, appErr
 	}
 	return s, nil
 }
 
 func (r *Repository) ListByMedicine(ctx context.Context, medicineID int64) ([]schedule.Schedule, error) {
-	ctx, span := r.tracer.Start(ctx, "schedulerepo.ListByMedicine")
+	const method = "ListByMedicine"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "schedulerepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	const q = `SELECT id, medicine_id, schedule_type, interval_days, days_of_week, times, start_date, end_date, created_at FROM schedules WHERE medicine_id = $1 ORDER BY created_at ASC`
 
 	result, err := r.queryList(ctx, q, medicineID)
 	if err != nil {
-		appErr := apperrors.DB("schedulerepo.ListByMedicine", err)
-		repolog.Err(ctx, r.log, span, "failed to list schedules", appErr, zap.Int64("medicine_id", medicineID))
+		appErr := apperrors.DB("schedulerepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to list schedules", appErr, zap.Int64("medicine_id", medicineID))
 		return nil, appErr
 	}
 	return result, nil
 }
 
 func (r *Repository) ListActive(ctx context.Context, date time.Time) ([]schedule.Schedule, error) {
-	ctx, span := r.tracer.Start(ctx, "schedulerepo.ListActive")
+	const method = "ListActive"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "schedulerepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
-	const q = `
-		SELECT id, medicine_id, schedule_type, interval_days, days_of_week, times, start_date, end_date, created_at
-		FROM schedules WHERE start_date <= $1 AND (end_date IS NULL OR end_date >= $1) ORDER BY id ASC`
+	const q = `SELECT id, medicine_id, schedule_type, interval_days, days_of_week, times, start_date, end_date, created_at FROM schedules WHERE start_date <= $1 AND (end_date IS NULL OR end_date >= $1) ORDER BY id ASC`
 
 	result, err := r.queryList(ctx, q, date.Truncate(24*time.Hour))
 	if err != nil {
-		appErr := apperrors.DB("schedulerepo.ListActive", err)
-		repolog.Err(ctx, r.log, span, "failed to list active schedules", appErr, zap.Time("date", date))
+		appErr := apperrors.DB("schedulerepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to list active schedules", appErr, zap.Time("date", date))
 		return nil, appErr
 	}
 	return result, nil
 }
 
 func (r *Repository) Create(ctx context.Context, s *schedule.Schedule) error {
-	ctx, span := r.tracer.Start(ctx, "schedulerepo.Create")
+	const method = "Create"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "schedulerepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
-	const q = `INSERT INTO schedules (medicine_id, schedule_type, interval_days, days_of_week, times, start_date, end_date) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, created_at`
+	const q = `INSERT INTO schedules (medicine_id, schedule_type, interval_days, days_of_week, times, start_date, end_date) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, created_at`
 
 	err := r.db.QueryRowContext(ctx, q,
 		s.MedicineID, s.Type, s.IntervalDays, s.DaysOfWeek,
 		pq.Array(timesToStrings(s.Times)), s.StartDate, s.EndDate,
 	).Scan(&s.ID, &s.CreatedAt)
 	if err != nil {
-		appErr := apperrors.DB("schedulerepo.Create", err)
-		repolog.Err(ctx, r.log, span, "failed to create schedule", appErr,
+		appErr := apperrors.DB("schedulerepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to create schedule", appErr,
 			zap.Int64("medicine_id", s.MedicineID),
 			zap.String("type", string(s.Type)),
 		)
@@ -103,22 +118,21 @@ func (r *Repository) Create(ctx context.Context, s *schedule.Schedule) error {
 }
 
 func (r *Repository) Update(ctx context.Context, s *schedule.Schedule) error {
-	ctx, span := r.tracer.Start(ctx, "schedulerepo.Update")
+	const method = "Update"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "schedulerepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
-	const q = `UPDATE schedules SET schedule_type=$1, interval_days=$2, days_of_week=$3, times=$4, start_date=$5, end_date=$6 WHERE id=$7`
-
-	res, err := r.db.ExecContext(ctx, q,
-		s.Type, s.IntervalDays, s.DaysOfWeek,
-		pq.Array(timesToStrings(s.Times)), s.StartDate, s.EndDate, s.ID,
+	res, err := r.db.ExecContext(ctx, `UPDATE schedules SET schedule_type=$1, interval_days=$2, days_of_week=$3, times=$4, start_date=$5, end_date=$6 WHERE id=$7`,
+		s.Type, s.IntervalDays, s.DaysOfWeek, pq.Array(timesToStrings(s.Times)), s.StartDate, s.EndDate, s.ID,
 	)
 	if err != nil {
-		appErr := apperrors.DB("schedulerepo.Update", err)
-		repolog.Err(ctx, r.log, span, "failed to update schedule", appErr, zap.Int64("id", s.ID))
+		appErr := apperrors.DB("schedulerepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to update schedule", appErr, zap.Int64("id", s.ID))
 		return appErr
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
+	if n, _ := res.RowsAffected(); n == 0 {
 		repolog.Debug(ctx, r.log, "schedule not found on update", zap.Int64("id", s.ID))
 		return schedule.ErrNotFound
 	}
@@ -126,17 +140,19 @@ func (r *Repository) Update(ctx context.Context, s *schedule.Schedule) error {
 }
 
 func (r *Repository) Delete(ctx context.Context, id int64) error {
-	ctx, span := r.tracer.Start(ctx, "schedulerepo.Delete")
+	const method = "Delete"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "schedulerepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	res, err := r.db.ExecContext(ctx, `DELETE FROM schedules WHERE id = $1`, id)
 	if err != nil {
-		appErr := apperrors.DB("schedulerepo.Delete", err)
-		repolog.Err(ctx, r.log, span, "failed to delete schedule", appErr, zap.Int64("id", id))
+		appErr := apperrors.DB("schedulerepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to delete schedule", appErr, zap.Int64("id", id))
 		return appErr
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
+	if n, _ := res.RowsAffected(); n == 0 {
 		repolog.Debug(ctx, r.log, "schedule not found on delete", zap.Int64("id", id))
 		return schedule.ErrNotFound
 	}

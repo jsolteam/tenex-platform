@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -11,26 +12,34 @@ import (
 	"github.com/jsolteam/tenex-platform/internal/infrastructure/repolog"
 	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
+
+const repoName = "media"
 
 type Repository struct {
 	db     *sql.DB
 	log    *core.Logger
 	tracer tracing.Tracer
+	met    *metrics.DBMetrics
 }
 
-func New(db *sql.DB, log *core.Logger, tracer tracing.Tracer) *Repository {
+func New(db *sql.DB, log *core.Logger, tracer tracing.Tracer, met *metrics.DBMetrics) *Repository {
 	return &Repository{
 		db:     db,
-		log:    log.With(zap.String("repo", "media")),
+		log:    log.With(zap.String("repo", repoName)),
 		tracer: tracer,
+		met:    met,
 	}
 }
 
 func (r *Repository) GetByID(ctx context.Context, id int64) (*media.Media, error) {
-	ctx, span := r.tracer.Start(ctx, "mediarepo.GetByID")
+	const method = "GetByID"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "mediarepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	m := &media.Media{}
 	err := r.db.QueryRowContext(ctx, `SELECT id, owner_user_id, media_type, created_at FROM media WHERE id=$1`, id).
@@ -40,22 +49,25 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (*media.Media, error
 		return nil, media.ErrNotFound
 	}
 	if err != nil {
-		appErr := apperrors.DB("mediarepo.GetByID", err)
-		repolog.Err(ctx, r.log, span, "failed to get media", appErr, zap.Int64("id", id))
+		appErr := apperrors.DB("mediarepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to get media", appErr, zap.Int64("id", id))
 		return nil, appErr
 	}
 	return m, nil
 }
 
 func (r *Repository) Create(ctx context.Context, m *media.Media) error {
-	ctx, span := r.tracer.Start(ctx, "mediarepo.Create")
+	const method = "Create"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "mediarepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	err := r.db.QueryRowContext(ctx, `INSERT INTO media (owner_user_id, media_type) VALUES ($1,$2) RETURNING id, created_at`, m.OwnerUserID, m.MediaType).
 		Scan(&m.ID, &m.CreatedAt)
 	if err != nil {
-		appErr := apperrors.DB("mediarepo.Create", err)
-		repolog.Err(ctx, r.log, span, "failed to create media", appErr,
+		appErr := apperrors.DB("mediarepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to create media", appErr,
 			zap.Int64("owner_user_id", m.OwnerUserID),
 			zap.String("media_type", string(m.MediaType)),
 		)
@@ -65,13 +77,16 @@ func (r *Repository) Create(ctx context.Context, m *media.Media) error {
 }
 
 func (r *Repository) Delete(ctx context.Context, id int64) error {
-	ctx, span := r.tracer.Start(ctx, "mediarepo.Delete")
+	const method = "Delete"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "mediarepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	res, err := r.db.ExecContext(ctx, `DELETE FROM media WHERE id=$1`, id)
 	if err != nil {
-		appErr := apperrors.DB("mediarepo.Delete", err)
-		repolog.Err(ctx, r.log, span, "failed to delete media", appErr, zap.Int64("id", id))
+		appErr := apperrors.DB("mediarepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to delete media", appErr, zap.Int64("id", id))
 		return appErr
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
@@ -82,15 +97,16 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 }
 
 func (r *Repository) GetVariants(ctx context.Context, mediaID int64) ([]media.MediaVariant, error) {
-	ctx, span := r.tracer.Start(ctx, "mediarepo.GetVariants")
+	const method = "GetVariants"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "mediarepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
-	const q = `SELECT id, media_id, storage_type, COALESCE(messenger,''), COALESCE(external_id,''), COALESCE(url,''), created_at FROM media_variants WHERE media_id=$1 ORDER BY created_at ASC`
-
-	rows, err := r.db.QueryContext(ctx, q, mediaID)
+	rows, err := r.db.QueryContext(ctx, `SELECT id, media_id, storage_type, COALESCE(messenger,''), COALESCE(external_id,''), COALESCE(url,''), created_at FROM media_variants WHERE media_id=$1 ORDER BY created_at ASC`, mediaID)
 	if err != nil {
-		appErr := apperrors.DB("mediarepo.GetVariants", err)
-		repolog.Err(ctx, r.log, span, "failed to get media variants", appErr, zap.Int64("media_id", mediaID))
+		appErr := apperrors.DB("mediarepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to get media variants", appErr, zap.Int64("media_id", mediaID))
 		return nil, appErr
 	}
 	defer rows.Close()
@@ -99,28 +115,29 @@ func (r *Repository) GetVariants(ctx context.Context, mediaID int64) ([]media.Me
 	for rows.Next() {
 		var v media.MediaVariant
 		if err = rows.Scan(&v.ID, &v.MediaID, &v.StorageType, &v.Messenger, &v.ExternalID, &v.URL, &v.CreatedAt); err != nil {
-			appErr := apperrors.DB("mediarepo.GetVariants.scan", err)
-			repolog.Err(ctx, r.log, span, "failed to scan media variant", appErr, zap.Int64("media_id", mediaID))
+			appErr := apperrors.DB("mediarepo."+method+".scan", err)
+			repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to scan media variant", appErr, zap.Int64("media_id", mediaID))
 			return nil, appErr
 		}
 		variants = append(variants, v)
 	}
 	if err = rows.Err(); err != nil {
-		appErr := apperrors.DB("mediarepo.GetVariants.rows", err)
-		repolog.Err(ctx, r.log, span, "media variants rows error", appErr, zap.Int64("media_id", mediaID))
+		appErr := apperrors.DB("mediarepo."+method+".rows", err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "media variants rows error", appErr, zap.Int64("media_id", mediaID))
 		return nil, appErr
 	}
 	return variants, nil
 }
 
 func (r *Repository) GetVariantByStorage(ctx context.Context, mediaID int64, storageType media.StorageType, messenger string) (*media.MediaVariant, error) {
-	ctx, span := r.tracer.Start(ctx, "mediarepo.GetVariantByStorage")
+	const method = "GetVariantByStorage"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "mediarepo."+method)
 	defer span.End()
-
-	const q = `SELECT id, media_id, storage_type, COALESCE(messenger,''), COALESCE(external_id,''), COALESCE(url,''), created_at FROM media_variants WHERE media_id=$1 AND storage_type=$2 AND COALESCE(messenger,'')=$3`
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	v := &media.MediaVariant{}
-	err := r.db.QueryRowContext(ctx, q, mediaID, storageType, messenger).
+	err := r.db.QueryRowContext(ctx, `SELECT id, media_id, storage_type, COALESCE(messenger,''), COALESCE(external_id,''), COALESCE(url,''), created_at FROM media_variants WHERE media_id=$1 AND storage_type=$2 AND COALESCE(messenger,'')=$3`, mediaID, storageType, messenger).
 		Scan(&v.ID, &v.MediaID, &v.StorageType, &v.Messenger, &v.ExternalID, &v.URL, &v.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		repolog.Debug(ctx, r.log, "media variant not found",
@@ -130,23 +147,26 @@ func (r *Repository) GetVariantByStorage(ctx context.Context, mediaID int64, sto
 		return nil, media.ErrVariantNotFound
 	}
 	if err != nil {
-		appErr := apperrors.DB("mediarepo.GetVariantByStorage", err)
-		repolog.Err(ctx, r.log, span, "failed to get media variant", appErr, zap.Int64("media_id", mediaID))
+		appErr := apperrors.DB("mediarepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to get media variant", appErr, zap.Int64("media_id", mediaID))
 		return nil, appErr
 	}
 	return v, nil
 }
 
 func (r *Repository) AddVariant(ctx context.Context, v *media.MediaVariant) error {
-	ctx, span := r.tracer.Start(ctx, "mediarepo.AddVariant")
+	const method = "AddVariant"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "mediarepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
-	const q = `INSERT INTO media_variants (media_id, storage_type, messenger, external_id, url) VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,'')) RETURNING id, created_at`
-
-	err := r.db.QueryRowContext(ctx, q, v.MediaID, v.StorageType, v.Messenger, v.ExternalID, v.URL).Scan(&v.ID, &v.CreatedAt)
+	err := r.db.QueryRowContext(ctx, `INSERT INTO media_variants (media_id, storage_type, messenger, external_id, url) VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,'')) RETURNING id, created_at`,
+		v.MediaID, v.StorageType, v.Messenger, v.ExternalID, v.URL,
+	).Scan(&v.ID, &v.CreatedAt)
 	if err != nil {
-		appErr := apperrors.DB("mediarepo.AddVariant", err)
-		repolog.Err(ctx, r.log, span, "failed to add media variant", appErr,
+		appErr := apperrors.DB("mediarepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to add media variant", appErr,
 			zap.Int64("media_id", v.MediaID),
 			zap.String("storage_type", string(v.StorageType)),
 		)
@@ -156,13 +176,16 @@ func (r *Repository) AddVariant(ctx context.Context, v *media.MediaVariant) erro
 }
 
 func (r *Repository) DeleteVariant(ctx context.Context, id int64) error {
-	ctx, span := r.tracer.Start(ctx, "mediarepo.DeleteVariant")
+	const method = "DeleteVariant"
+	start := time.Now()
+	ctx, span := r.tracer.Start(ctx, "mediarepo."+method)
 	defer span.End()
+	defer func() { r.met.RecordDuration(ctx, repoName, method, time.Since(start).Seconds()) }()
 
 	res, err := r.db.ExecContext(ctx, `DELETE FROM media_variants WHERE id=$1`, id)
 	if err != nil {
-		appErr := apperrors.DB("mediarepo.DeleteVariant", err)
-		repolog.Err(ctx, r.log, span, "failed to delete media variant", appErr, zap.Int64("id", id))
+		appErr := apperrors.DB("mediarepo."+method, err)
+		repolog.Err(ctx, r.log, span, r.met, repoName, method, "failed to delete media variant", appErr, zap.Int64("id", id))
 		return appErr
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
