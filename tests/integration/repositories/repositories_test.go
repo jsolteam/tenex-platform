@@ -9,15 +9,19 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"errors"
+
 	"github.com/jsolteam/tenex-platform/internal/domain/medicine"
 	"github.com/jsolteam/tenex-platform/internal/domain/schedule"
 	"github.com/jsolteam/tenex-platform/internal/domain/user"
 	"github.com/jsolteam/tenex-platform/internal/infrastructure/database"
 	"github.com/jsolteam/tenex-platform/internal/infrastructure/database/repositories"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
 
-// Тесты запускаются только при наличии переменной DB_HOST.
-// В CI используется postgres service (см. .github/workflows/ci.yml).
+// ── helpers ───────────────────────────────────────────────────────────────
 
 func setupDB(t *testing.T) (*sql.DB, *repositories.Repositories) {
 	t.Helper()
@@ -42,7 +46,24 @@ func setupDB(t *testing.T) (*sql.DB, *repositories.Repositories) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	return db, repositories.New(db)
+	return db, newRepos(db)
+}
+
+// newRepos создаёт репозитории с noop-зависимостями для тестов.
+// В production используй полноценные logger / tracer / metrics.
+func newRepos(db *sql.DB) *repositories.Repositories {
+	log := core.NewNoop()
+	tracer := tracing.NewNoop()
+	met := noopDBMetrics()
+	return repositories.New(db, log, tracer, met)
+}
+
+// noopDBMetrics возвращает *metrics.DBMetrics с noop-реестром.
+// Все вызовы RecordDuration / RecordError отбрасываются.
+func noopDBMetrics() *metrics.DBMetrics {
+	reg := metrics.NewNoop()
+	met, _ := metrics.NewDBMetrics(reg)
+	return met
 }
 
 func getenv(key, fallback string) string {
@@ -77,7 +98,7 @@ func TestUserRepo_CreateAndGetByID(t *testing.T) {
 		t.Fatalf("GetByID: %v", err)
 	}
 	if got.Timezone != "UTC" {
-		t.Errorf("Timezone = %q, want %q", got.Timezone, "UTC")
+		t.Errorf("Timezone = %q, want UTC", got.Timezone)
 	}
 }
 
@@ -159,15 +180,18 @@ func TestUserRepo_AddContact_DuplicateFails(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	// Пытаемся добавить второй контакт с тем же messenger_user_id
 	dup := &user.UserContact{
 		UserID:          u.ID,
 		MessengerType:   user.MessengerTelegram,
 		MessengerUserID: messengerUserID,
 	}
 	err := repos.User.AddContact(ctx, dup)
-	if err != user.ErrContactAlreadyExists {
-		t.Errorf("expected ErrContactAlreadyExists, got: %v", err)
+	if err == nil {
+		t.Fatal("expected error for duplicate contact, got nil")
+	}
+	// Ошибка теперь обёрнута в AppError с ErrValidation — проверяем через errors.Is
+	if !isContactAlreadyExists(err) {
+		t.Errorf("expected contact already exists error, got: %v", err)
 	}
 }
 
@@ -205,7 +229,6 @@ func TestUserStats_Upsert(t *testing.T) {
 		t.Errorf("AdherenceRate = %v, want 0.8", got.AdherenceRate)
 	}
 
-	// Повторный upsert — обновление
 	stats.Confirmed = 9
 	if err := repos.UserStats.Upsert(ctx, stats); err != nil {
 		t.Fatalf("Upsert 2: %v", err)
@@ -222,7 +245,6 @@ func TestMedicineRepo_CreateListDelete(t *testing.T) {
 	_, repos := setupDB(t)
 	ctx := context.Background()
 
-	// Создаём пользователя
 	u := &user.User{Timezone: "UTC", Language: "en"}
 	contact := &user.UserContact{
 		MessengerType:   user.MessengerTelegram,
@@ -232,11 +254,7 @@ func TestMedicineRepo_CreateListDelete(t *testing.T) {
 		t.Fatalf("Create user: %v", err)
 	}
 
-	// Создаём лекарство
-	m := &medicine.Medicine{
-		UserID: u.ID,
-		Name:   "Aspirin",
-	}
+	m := &medicine.Medicine{UserID: u.ID, Name: "Aspirin"}
 	if err := repos.Medicine.Create(ctx, m); err != nil {
 		t.Fatalf("Create medicine: %v", err)
 	}
@@ -244,7 +262,6 @@ func TestMedicineRepo_CreateListDelete(t *testing.T) {
 		t.Fatal("expected non-zero medicine ID")
 	}
 
-	// Список
 	list, err := repos.Medicine.ListByUser(ctx, u.ID)
 	if err != nil {
 		t.Fatalf("ListByUser: %v", err)
@@ -256,7 +273,6 @@ func TestMedicineRepo_CreateListDelete(t *testing.T) {
 		t.Errorf("Name = %q, want Aspirin", list[0].Name)
 	}
 
-	// Удаление
 	if err := repos.Medicine.Delete(ctx, m.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -300,7 +316,6 @@ func TestScheduleRepo_CreateAndListActive(t *testing.T) {
 	_, repos := setupDB(t)
 	ctx := context.Background()
 
-	// Создаём цепочку user → medicine → schedule
 	u := &user.User{Timezone: "UTC", Language: "en"}
 	contact := &user.UserContact{
 		MessengerType:   user.MessengerTelegram,
@@ -327,7 +342,6 @@ func TestScheduleRepo_CreateAndListActive(t *testing.T) {
 		t.Fatal("expected non-zero schedule ID")
 	}
 
-	// ListActive должен вернуть расписание
 	active, err := repos.Schedule.ListActive(ctx, today)
 	if err != nil {
 		t.Fatalf("ListActive: %v", err)
@@ -427,7 +441,6 @@ func TestConfigRepo_GetAll(t *testing.T) {
 	_, repos := setupDB(t)
 	ctx := context.Background()
 
-	// Миграция 0008 сидит дефолтные значения
 	configs, err := repos.Config.GetAll(ctx)
 	if err != nil {
 		t.Fatalf("GetAll: %v", err)
@@ -454,7 +467,6 @@ func TestConfigRepo_SetAndGet(t *testing.T) {
 		t.Errorf("Value = %q, want testvalue", got.Value)
 	}
 
-	// Upsert — обновление
 	if err := repos.Config.Set(ctx, key, "newvalue"); err != nil {
 		t.Fatalf("Set (update): %v", err)
 	}
@@ -463,7 +475,6 @@ func TestConfigRepo_SetAndGet(t *testing.T) {
 		t.Errorf("after update Value = %q, want newvalue", got2.Value)
 	}
 
-	// Удаление
 	if err := repos.Config.Delete(ctx, key); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -471,8 +482,17 @@ func TestConfigRepo_SetAndGet(t *testing.T) {
 
 // ─── helpers ─────────────────────────────────────────────────────────────
 
-// uniqueID генерирует уникальный строковый ID для изоляции тестов.
 func uniqueID(t *testing.T) string {
 	t.Helper()
 	return t.Name() + "_" + time.Now().Format("150405.000000000")
+}
+
+// isContactAlreadyExists проверяет что ошибка содержит user.ErrContactAlreadyExists
+// через цепочку Unwrap (AppError оборачивает доменную ошибку).
+func isContactAlreadyExists(err error) bool {
+	if err == nil {
+		return false
+	}
+	// errors.Is идёт по Unwrap-цепочке: AppError → user.ErrContactAlreadyExists
+	return errors.Is(err, user.ErrContactAlreadyExists)
 }

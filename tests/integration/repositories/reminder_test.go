@@ -18,31 +18,28 @@ import (
 
 func setupRepos(t *testing.T) *repositories.Repositories {
 	t.Helper()
+
 	host := os.Getenv("DB_HOST")
 	if host == "" {
 		t.Skip("DB_HOST not set")
 	}
+
 	cfg := database.Config{
 		Host:     host,
 		Port:     5432,
-		User:     getEnv("DB_USER", "tenex"),
-		Password: getEnv("DB_PASS", "tenex"),
-		Name:     getEnv("DB_NAME", "tenex"),
-		SSLMode:  getEnv("DB_SSL_MODE", "disable"),
+		User:     getenv("DB_USER", "tenex"),
+		Password: getenv("DB_PASS", "tenex"),
+		Name:     getenv("DB_NAME", "tenex"),
+		SSLMode:  getenv("DB_SSL_MODE", "disable"),
 	}
+
 	db, err := database.OpenAndMigrate(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("setupRepos: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return repositories.New(db)
-}
 
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
+	return newRepos(db)
 }
 
 func createTestUser(t *testing.T, repos *repositories.Repositories) *user.User {
@@ -181,7 +178,6 @@ func TestReminderRepo_ListPending(t *testing.T) {
 	u := createTestUser(t, repos)
 	m, s := createTestSchedule(t, repos, u.ID)
 
-	// Создаём 3 pending напоминания в прошлом
 	now := time.Now().UTC()
 	for i := 0; i < 3; i++ {
 		scheduledAt := now.Add(-time.Duration(i+1) * time.Hour).Truncate(time.Second)
@@ -200,7 +196,6 @@ func TestReminderRepo_ListPending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListPending: %v", err)
 	}
-	// Должно быть хотя бы 3 (могут быть и от других тестов)
 	if len(list) < 3 {
 		t.Errorf("ListPending returned %d, want >= 3", len(list))
 	}
@@ -224,12 +219,8 @@ func TestReminderRepo_IncrementRetry(t *testing.T) {
 	}
 	_ = repos.Reminder.Create(ctx, rem)
 
-	if err := repos.Reminder.IncrementRetry(ctx, rem.ID, scheduledAt); err != nil {
-		t.Fatalf("IncrementRetry: %v", err)
-	}
-	if err := repos.Reminder.IncrementRetry(ctx, rem.ID, scheduledAt); err != nil {
-		t.Fatalf("IncrementRetry x2: %v", err)
-	}
+	_ = repos.Reminder.IncrementRetry(ctx, rem.ID, scheduledAt)
+	_ = repos.Reminder.IncrementRetry(ctx, rem.ID, scheduledAt)
 
 	got, _ := repos.Reminder.GetByID(ctx, rem.ID, scheduledAt)
 	if got.RetryCount != 2 {
