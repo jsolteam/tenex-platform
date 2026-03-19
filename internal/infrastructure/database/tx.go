@@ -3,8 +3,12 @@ package database
 import (
 	"context"
 	"database/sql"
+	"fmt"
+
+	"go.uber.org/zap"
 
 	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
+	"github.com/jsolteam/tenex-platform/internal/platform/logger/facade"
 )
 
 type TxFunc func(ctx context.Context, tx *sql.Tx) error
@@ -17,6 +21,13 @@ func WithTx(ctx context.Context, db *sql.DB, fn TxFunc) (retErr error) {
 	defer func() {
 		if p := recover(); p != nil {
 			_ = tx.Rollback()
+			appErr := apperrors.Panic("database.WithTx",
+				fmt.Errorf("%v", p),
+			)
+			facade.Ctx(ctx).Error("transaction panic recovered",
+				zap.Error(appErr),
+				zap.String("module", "database.WithTx"),
+			)
 			panic(p)
 		}
 		if retErr != nil {
@@ -41,6 +52,13 @@ func WithTxOpts(ctx context.Context, db *sql.DB, opts *sql.TxOptions, fn TxFunc)
 	defer func() {
 		if p := recover(); p != nil {
 			_ = tx.Rollback()
+			appErr := apperrors.Panic("database.WithTxOpts",
+				fmt.Errorf("%v", p),
+			)
+			facade.Ctx(ctx).Error("transaction panic recovered",
+				zap.Error(appErr),
+				zap.String("module", "database.WithTxOpts"),
+			)
 			panic(p)
 		}
 		if retErr != nil {
