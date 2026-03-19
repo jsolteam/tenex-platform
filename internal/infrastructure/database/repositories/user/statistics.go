@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	"github.com/jsolteam/tenex-platform/internal/domain/user"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
 type StatisticsRepository struct {
@@ -32,7 +32,7 @@ func (r *StatisticsRepository) GetByUserID(ctx context.Context, userID int64) (*
 		return nil, user.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("userrepo.GetStatsByUserID: %w", err)
+		return nil, apperrors.DB("userrepo.GetStatsByUserID", err)
 	}
 	return s, nil
 }
@@ -58,7 +58,7 @@ func (r *StatisticsRepository) Upsert(ctx context.Context, s *user.UserStatistic
 		s.UserID, s.TotalReminders, s.Confirmed, s.Skipped, s.AdherenceRate,
 	).Scan(&s.UpdatedAt)
 	if err != nil {
-		return fmt.Errorf("userrepo.UpsertStats: %w", err)
+		return apperrors.DB("userrepo.UpsertStats", err)
 	}
 	return nil
 }

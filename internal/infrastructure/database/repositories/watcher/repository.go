@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/jsolteam/tenex-platform/internal/domain/watcher"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
 type Repository struct {
@@ -28,7 +30,7 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (*watcher.Watcher, e
 		return nil, watcher.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("watcherrepo.GetByID: %w", err)
+		return nil, apperrors.DB("watcherrepo.GetByID", err)
 	}
 	return w, nil
 }
@@ -47,7 +49,7 @@ func (r *Repository) GetByPair(ctx context.Context, userID, watcherUserID int64)
 		return nil, watcher.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("watcherrepo.GetByPair: %w", err)
+		return nil, apperrors.DB("watcherrepo.GetByPair", err)
 	}
 	return w, nil
 }
@@ -60,7 +62,11 @@ func (r *Repository) ListByUser(ctx context.Context, userID int64) ([]watcher.Wa
 		WHERE user_id = $1
 		ORDER BY created_at ASC`
 
-	return r.queryWatchers(ctx, q, userID)
+	result, err := r.queryWatchers(ctx, q, userID)
+	if err != nil {
+		return nil, apperrors.DB("watcherrepo.ListByUser", err)
+	}
+	return result, nil
 }
 
 // ListByWatcher возвращает всех пациентов которых наблюдает watcherUserID.
@@ -71,7 +77,11 @@ func (r *Repository) ListByWatcher(ctx context.Context, watcherUserID int64) ([]
 		WHERE watcher_user_id = $1
 		ORDER BY created_at ASC`
 
-	return r.queryWatchers(ctx, q, watcherUserID)
+	result, err := r.queryWatchers(ctx, q, watcherUserID)
+	if err != nil {
+		return nil, apperrors.DB("watcherrepo.ListByWatcher", err)
+	}
+	return result, nil
 }
 
 // Create добавляет нового наблюдателя.
@@ -84,7 +94,11 @@ func (r *Repository) Create(ctx context.Context, w *watcher.Watcher) error {
 	err := r.db.QueryRowContext(ctx, q, w.UserID, w.WatcherUserID).
 		Scan(&w.ID, &w.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("watcherrepo.Create: %w", err)
+		if isUniqueViolation(err) {
+			// Пара (user_id, watcher_user_id) уже существует — нарушение uq_watchers_pair.
+			return apperrors.Validation("watcherrepo.Create", watcher.ErrAlreadyExists)
+		}
+		return apperrors.DB("watcherrepo.Create", err)
 	}
 	return nil
 }
@@ -95,7 +109,7 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 
 	res, err := r.db.ExecContext(ctx, q, id)
 	if err != nil {
-		return fmt.Errorf("watcherrepo.Delete: %w", err)
+		return apperrors.DB("watcherrepo.Delete", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -116,7 +130,7 @@ func (r *Repository) GetNotificationByID(ctx context.Context, id int64) (*watche
 		return nil, watcher.ErrNotificationNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("watcherrepo.GetNotificationByID: %w", err)
+		return nil, apperrors.DB("watcherrepo.GetNotificationByID", err)
 	}
 	return n, nil
 }
@@ -132,7 +146,7 @@ func (r *Repository) ListPendingNotifications(ctx context.Context, limit int) ([
 
 	rows, err := r.db.QueryContext(ctx, q, limit)
 	if err != nil {
-		return nil, fmt.Errorf("watcherrepo.ListPendingNotifications: %w", err)
+		return nil, apperrors.DB("watcherrepo.ListPendingNotifications", err)
 	}
 	defer rows.Close()
 
@@ -140,11 +154,14 @@ func (r *Repository) ListPendingNotifications(ctx context.Context, limit int) ([
 	for rows.Next() {
 		n, err := scanNotification(rows)
 		if err != nil {
-			return nil, fmt.Errorf("watcherrepo.ListPendingNotifications: scan: %w", err)
+			return nil, apperrors.DB("watcherrepo.ListPendingNotifications.scan", err)
 		}
 		result = append(result, *n)
 	}
-	return result, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, apperrors.DB("watcherrepo.ListPendingNotifications.rows", err)
+	}
+	return result, nil
 }
 
 // CreateNotification создаёт уведомление для наблюдателя.
@@ -157,7 +174,7 @@ func (r *Repository) CreateNotification(ctx context.Context, n *watcher.WatcherN
 	err := r.db.QueryRowContext(ctx, q, n.WatcherID, n.ReminderID, n.Event).
 		Scan(&n.ID, &n.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("watcherrepo.CreateNotification: %w", err)
+		return apperrors.DB("watcherrepo.CreateNotification", err)
 	}
 	return nil
 }
@@ -168,7 +185,7 @@ func (r *Repository) MarkNotificationSent(ctx context.Context, id int64, sentAt 
 
 	res, err := r.db.ExecContext(ctx, q, sentAt, id)
 	if err != nil {
-		return fmt.Errorf("watcherrepo.MarkNotificationSent: %w", err)
+		return apperrors.DB("watcherrepo.MarkNotificationSent", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -186,7 +203,7 @@ type scanner interface {
 func (r *Repository) queryWatchers(ctx context.Context, q string, args ...any) ([]watcher.Watcher, error) {
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("watcherrepo: query: %w", err)
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -194,7 +211,7 @@ func (r *Repository) queryWatchers(ctx context.Context, q string, args ...any) (
 	for rows.Next() {
 		var w watcher.Watcher
 		if err = rows.Scan(&w.ID, &w.UserID, &w.WatcherUserID, &w.CreatedAt); err != nil {
-			return nil, fmt.Errorf("watcherrepo: scan: %w", err)
+			return nil, err
 		}
 		result = append(result, w)
 	}
@@ -212,4 +229,10 @@ func scanNotification(s scanner) (*watcher.WatcherNotification, error) {
 		n.SentAt = &sentAt.Time
 	}
 	return n, nil
+}
+
+// isUniqueViolation проверяет что ошибка — нарушение уникального индекса (PostgreSQL code 23505).
+func isUniqueViolation(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505"
 }

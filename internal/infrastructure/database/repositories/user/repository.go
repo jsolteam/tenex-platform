@@ -4,10 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
+
+	"github.com/lib/pq"
 
 	"github.com/jsolteam/tenex-platform/internal/domain/user"
-	"github.com/lib/pq"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
 type Repository struct {
@@ -33,7 +34,7 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (*user.User, error) 
 		return nil, user.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("userrepo.GetByID: %w", err)
+		return nil, apperrors.DB("userrepo.GetByID", err)
 	}
 	return u, nil
 }
@@ -54,7 +55,7 @@ func (r *Repository) GetByMessenger(ctx context.Context, messengerType user.Mess
 		return nil, user.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("userrepo.GetByMessenger: %w", err)
+		return nil, apperrors.DB("userrepo.GetByMessenger", err)
 	}
 	return u, nil
 }
@@ -63,7 +64,7 @@ func (r *Repository) GetByMessenger(ctx context.Context, messengerType user.Mess
 func (r *Repository) Create(ctx context.Context, u *user.User, contact *user.UserContact) (retErr error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("userrepo.Create: begin tx: %w", err)
+		return apperrors.DBConnect("userrepo.Create.begin", err)
 	}
 	defer func() {
 		if retErr != nil {
@@ -78,7 +79,7 @@ func (r *Repository) Create(ctx context.Context, u *user.User, contact *user.Use
 
 	if err = tx.QueryRowContext(ctx, qUser, u.Timezone, u.Language).
 		Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt); err != nil {
-		retErr = fmt.Errorf("userrepo.Create: insert user: %w", err)
+		retErr = apperrors.DB("userrepo.Create.insertUser", err)
 		return
 	}
 
@@ -94,11 +95,18 @@ func (r *Repository) Create(ctx context.Context, u *user.User, contact *user.Use
 		contact.UserID, contact.MessengerType, contact.MessengerUserID,
 		contact.Username, contact.IsPrimary,
 	).Scan(&contact.ID, &contact.CreatedAt); err != nil {
-		retErr = fmt.Errorf("userrepo.Create: insert contact: %w", err)
+		if isUniqueViolation(err) {
+			retErr = apperrors.Validation("userrepo.Create.insertContact", user.ErrContactAlreadyExists)
+			return
+		}
+		retErr = apperrors.DB("userrepo.Create.insertContact", err)
 		return
 	}
 
 	retErr = tx.Commit()
+	if retErr != nil {
+		retErr = apperrors.DB("userrepo.Create.commit", retErr)
+	}
 	return
 }
 
@@ -116,7 +124,7 @@ func (r *Repository) Update(ctx context.Context, u *user.User) error {
 		return user.ErrNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("userrepo.Update: %w", err)
+		return apperrors.DB("userrepo.Update", err)
 	}
 	return nil
 }
@@ -131,7 +139,7 @@ func (r *Repository) GetContacts(ctx context.Context, userID int64) ([]user.User
 
 	rows, err := r.db.QueryContext(ctx, q, userID)
 	if err != nil {
-		return nil, fmt.Errorf("userrepo.GetContacts: %w", err)
+		return nil, apperrors.DB("userrepo.GetContacts", err)
 	}
 	defer rows.Close()
 
@@ -142,11 +150,14 @@ func (r *Repository) GetContacts(ctx context.Context, userID int64) ([]user.User
 			&c.ID, &c.UserID, &c.MessengerType, &c.MessengerUserID,
 			&c.Username, &c.IsPrimary, &c.CreatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("userrepo.GetContacts: scan: %w", err)
+			return nil, apperrors.DB("userrepo.GetContacts.scan", err)
 		}
 		contacts = append(contacts, c)
 	}
-	return contacts, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, apperrors.DB("userrepo.GetContacts.rows", err)
+	}
+	return contacts, nil
 }
 
 // AddContact добавляет новый контакт пользователю.
@@ -162,9 +173,11 @@ func (r *Repository) AddContact(ctx context.Context, contact *user.UserContact) 
 	).Scan(&contact.ID, &contact.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return user.ErrContactAlreadyExists
+			// Оборачиваем доменную ошибку в AppError с кодом ErrValidation,
+			// чтобы Classify() и CodeOf() работали корректно на всех слоях.
+			return apperrors.Validation("userrepo.AddContact", user.ErrContactAlreadyExists)
 		}
-		return fmt.Errorf("userrepo.AddContact: %w", err)
+		return apperrors.DB("userrepo.AddContact", err)
 	}
 	return nil
 }
@@ -173,7 +186,7 @@ func (r *Repository) AddContact(ctx context.Context, contact *user.UserContact) 
 func (r *Repository) SetPrimaryContact(ctx context.Context, userID, contactID int64) (retErr error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("userrepo.SetPrimaryContact: begin tx: %w", err)
+		return apperrors.DBConnect("userrepo.SetPrimaryContact.begin", err)
 	}
 	defer func() {
 		if retErr != nil {
@@ -184,7 +197,7 @@ func (r *Repository) SetPrimaryContact(ctx context.Context, userID, contactID in
 	if _, err = tx.ExecContext(ctx,
 		`UPDATE user_contacts SET is_primary = false WHERE user_id = $1`, userID,
 	); err != nil {
-		retErr = fmt.Errorf("userrepo.SetPrimaryContact: reset: %w", err)
+		retErr = apperrors.DB("userrepo.SetPrimaryContact.reset", err)
 		return
 	}
 
@@ -196,17 +209,20 @@ func (r *Repository) SetPrimaryContact(ctx context.Context, userID, contactID in
 		retErr = user.ErrContactNotFound
 		return
 	} else if err != nil {
-		retErr = fmt.Errorf("userrepo.SetPrimaryContact: set: %w", err)
+		retErr = apperrors.DB("userrepo.SetPrimaryContact.set", err)
 		return
 	}
 
-	retErr = tx.Commit()
+	if err = tx.Commit(); err != nil {
+		retErr = apperrors.DB("userrepo.SetPrimaryContact.commit", err)
+	}
 	return
 }
+
+// ── helpers ───────────────────────────────────────────────────────────────
 
 // isUniqueViolation проверяет что ошибка — нарушение уникального индекса (PostgreSQL code 23505).
 func isUniqueViolation(err error) bool {
 	var pqErr *pq.Error
 	return errors.As(err, &pqErr) && pqErr.Code == "23505"
 }
- 

@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jsolteam/tenex-platform/internal/domain/intake"
 	"github.com/lib/pq"
+
+	"github.com/jsolteam/tenex-platform/internal/domain/intake"
+	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 )
 
 type Repository struct {
@@ -34,7 +36,7 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (*intake.Intake, err
 		return nil, intake.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("intakerepo.GetByID: %w", err)
+		return nil, apperrors.DB("intakerepo.GetByID", err)
 	}
 	return i, nil
 }
@@ -54,7 +56,7 @@ func (r *Repository) GetByReminderID(ctx context.Context, reminderID int64) (*in
 		return nil, intake.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("intakerepo.GetByReminderID: %w", err)
+		return nil, apperrors.DB("intakerepo.GetByReminderID", err)
 	}
 	return i, nil
 }
@@ -69,11 +71,15 @@ func (r *Repository) ListByReminders(ctx context.Context, reminderIDs []int64) (
 
 	rows, err := r.db.QueryContext(ctx, q, pq.Array(reminderIDs))
 	if err != nil {
-		return nil, fmt.Errorf("intakerepo.ListByReminders: %w", err)
+		return nil, apperrors.DB("intakerepo.ListByReminders", err)
 	}
 	defer rows.Close()
 
-	return scanIntakes(rows)
+	result, err := scanIntakes(rows)
+	if err != nil {
+		return nil, apperrors.DB("intakerepo.ListByReminders.scan", err)
+	}
+	return result, nil
 }
 
 // ListConfirmedWithProof возвращает подтверждённые приёмы с медиа за период.
@@ -88,11 +94,15 @@ func (r *Repository) ListConfirmedWithProof(ctx context.Context, from, to time.T
 
 	rows, err := r.db.QueryContext(ctx, q, from, to, limit)
 	if err != nil {
-		return nil, fmt.Errorf("intakerepo.ListConfirmedWithProof: %w", err)
+		return nil, apperrors.DB("intakerepo.ListConfirmedWithProof", err)
 	}
 	defer rows.Close()
 
-	return scanIntakes(rows)
+	result, err := scanIntakes(rows)
+	if err != nil {
+		return nil, apperrors.DB("intakerepo.ListConfirmedWithProof.scan", err)
+	}
+	return result, nil
 }
 
 // Create создаёт запись о приёме/пропуске.
@@ -106,7 +116,7 @@ func (r *Repository) Create(ctx context.Context, i *intake.Intake) error {
 		i.ReminderID, i.Status, i.ProofMediaID, i.Reason,
 	).Scan(&i.ID, &i.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("intakerepo.Create: %w", err)
+		return apperrors.DB("intakerepo.Create", err)
 	}
 	return nil
 }
@@ -120,18 +130,11 @@ func scanIntakes(rows *sql.Rows) ([]intake.Intake, error) {
 		if err := rows.Scan(
 			&i.ID, &i.ReminderID, &i.Status, &i.ProofMediaID, &i.Reason, &i.CreatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("intakerepo: scan: %w", err)
+			return nil, err
 		}
 		result = append(result, i)
 	}
 	return result, rows.Err()
-}
-
-// int64SliceToArray конвертирует []int64 в формат pq-массива.
-func int64SliceToArray(ids []int64) interface{ Value() (interface{}, error) } {
-	type pgArray struct{ ids []int64 }
-	_ = pgArray{ids: ids}
-	return pqInt64Array(ids)
 }
 
 type pqInt64Array []int64
