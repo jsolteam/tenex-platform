@@ -1,3 +1,17 @@
+// Package repolog предоставляет хелперы для логирования, трейсинга и метрик
+//
+// Использование в репозиториях:
+//
+//	start := time.Now()
+//	ctx, span := r.tracer.Start(ctx, "userrepo.GetByID")
+//	defer span.End()
+//	defer r.met.RecordDuration(ctx, "user", "GetByID", time.Since(start).Seconds())
+//
+//	if err != nil {
+//	    appErr := apperrors.DB("userrepo.GetByID", err)
+//	    repolog.Err(ctx, r.log, span, r.met, "user", "GetByID", appErr, zap.Int64("id", id))
+//	    return nil, appErr
+//	}
 package repolog
 
 import (
@@ -10,6 +24,7 @@ import (
 	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
 	contextlog "github.com/jsolteam/tenex-platform/internal/platform/logger/context"
 	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
 
@@ -17,6 +32,8 @@ func Err(
 	ctx context.Context,
 	l *core.Logger,
 	span tracing.Span,
+	met *metrics.DBMetrics,
+	repo, method string,
 	msg string,
 	appErr *apperrors.AppError,
 	extra ...zap.Field,
@@ -28,6 +45,9 @@ func Err(
 		attribute.String("error.code", string(appErr.Code)),
 		attribute.String("error.module", appErr.Module),
 	)
+
+	// ── Метрики ───────────────────────────────────────────────────────────
+	met.RecordError(ctx, repo, method, string(appErr.Code))
 
 	// ── Лог ───────────────────────────────────────────────────────────────
 	logFields := buildFields(appErr, extra...)
@@ -45,8 +65,8 @@ func Err(
 	}
 }
 
-// Debug логирует штатный miss (ErrNotFound, not-found on update/delete) на уровне Debug.
-// Спан остаётся успешным — это не инфраструктурная ошибка.
+// Debug логирует штатный miss (ErrNotFound, RowsAffected == 0) на уровне Debug.
+// Спан остаётся успешным, метрики ошибок не трогаются.
 func Debug(ctx context.Context, l *core.Logger, msg string, extra ...zap.Field) {
 	contextlog.FromCtx(ctx, l).Debug(msg, extra...)
 }
