@@ -5,11 +5,14 @@ import (
 	"strings"
 )
 
-type attr struct {
-	key string
-	val any
+// Attr — произвольная пара ключ/значение, добавляемая через With().
+// Поля экспортированы для использования в логгере (zap.Any(a.Key, a.Val)).
+type Attr struct {
+	Key string
+	Val any
 }
 
+// AppError — структурированная ошибка платформы.
 type AppError struct {
 	Code     ErrorCode
 	Module   string
@@ -17,7 +20,7 @@ type AppError struct {
 	Cause    error
 
 	retryable bool
-	attrs     []attr
+	attrs     []Attr
 }
 
 // Error реализует интерфейс error.
@@ -26,7 +29,7 @@ func (e *AppError) Error() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[%s] %s", e.Module, e.Code)
 	for _, a := range e.attrs {
-		fmt.Fprintf(&b, " %s=%v", a.key, a.val)
+		fmt.Fprintf(&b, " %s=%v", a.Key, a.Val)
 	}
 	if e.Cause != nil {
 		b.WriteString(": ")
@@ -49,29 +52,32 @@ func (e *AppError) Retryable() *AppError {
 }
 
 // Fatal переключает severity на Fatal.
+// Используй для ошибок, после которых сервис не может продолжать работу.
 func (e *AppError) Fatal() *AppError {
 	e.Severity = SeverityFatal
 	return e
 }
 
 // Info переключает severity на Info.
+// Полезно для "ожидаемых" ошибок (not found, conflict), которые не должны
+// создавать шум в мониторинге.
 func (e *AppError) Info() *AppError {
 	e.Severity = SeverityInfo
 	return e
 }
 
 // With добавляет произвольный атрибут к ошибке.
-// Атрибуты отображаются в Error() и должны использоваться для контекстных
-// значений (user_id, reminder_id, key и т.д.).
+// Атрибуты отображаются в Error() и могут быть использованы в логгере
+// через appErr.Attrs() → zap.Any(a.Key, a.Val).
 //
 //	apperrors.DB("repo.List", err).With("user_id", uid).With("limit", 50)
 func (e *AppError) With(key string, val any) *AppError {
-	e.attrs = append(e.attrs, attr{key: key, val: val})
+	e.attrs = append(e.attrs, Attr{Key: key, Val: val})
 	return e
 }
 
 // IsRetryable возвращает true если ошибка помечена как повторяемая.
 func (e *AppError) IsRetryable() bool { return e.retryable }
 
-// Attrs возвращает срез пар ключ/значение для использования в логгере.
-func (e *AppError) Attrs() []attr { return e.attrs }
+// Attrs возвращает срез пар ключ/значение для использования в логгере:
+func (e *AppError) Attrs() []Attr { return e.attrs }
