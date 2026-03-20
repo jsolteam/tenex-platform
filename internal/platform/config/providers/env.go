@@ -17,6 +17,8 @@ var envBindings = []struct {
 	{"db.name", "DB_NAME"},
 	{"db.ssl_mode", "DB_SSL_MODE"},
 	{"redis.addr", "REDIS_ADDR"},
+	{"redis.password", "REDIS_PASSWORD"},
+	{"redis.db", "REDIS_DB"},
 	{"s3.endpoint", "S3_ENDPOINT"},
 	{"s3.key", "S3_KEY"},
 	{"s3.secret", "S3_SECRET"},

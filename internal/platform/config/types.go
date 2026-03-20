@@ -29,7 +29,9 @@ type DB struct {
 }
 
 type Redis struct {
-	Addr string `mapstructure:"addr"`
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
 }
 
 type Clients struct {
