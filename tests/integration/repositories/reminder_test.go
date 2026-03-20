@@ -26,7 +26,7 @@ func setupRepos(t *testing.T) *repositories.Repositories {
 
 	cfg := database.Config{
 		Host:     host,
-		Port:     5432,
+		Port:     5400,
 		User:     getenv("DB_USER", "tenex"),
 		Password: getenv("DB_PASS", "tenex"),
 		Name:     getenv("DB_NAME", "tenex"),

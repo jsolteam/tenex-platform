@@ -21,7 +21,7 @@ type Manager struct {
 	loader    *Loader
 	listeners []listenerEntry
 	nextID    atomic.Uint64
-	notifying atomic.Int32
+	//notifying atomic.Int32
 }
 
 func NewManager(loader *Loader) *Manager {
@@ -67,24 +67,40 @@ func (m *Manager) Load() error {
 
 	m.cfg.Store(cfg)
 
-	if m.notifying.CompareAndSwap(0, 1) {
-		go func() {
-			defer m.notifying.Store(0)
-			for _, e := range snapshot {
-				fn := e.fn
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							fmt.Fprintf(os.Stderr, "[config] listener panic: %v\n", r)
-						}
-					}()
-					fn(prev, cfg)
-				}()
-			}
-		}()
+	//if m.notifying.CompareAndSwap(0, 1) {
+	//	go func() {
+	//		defer m.notifying.Store(0)
+	//		for _, e := range snapshot {
+	//			fn := e.fn
+	//			func() {
+	//				defer func() {
+	//					if r := recover(); r != nil {
+	//						fmt.Fprintf(os.Stderr, "[config] listener panic: %v\n", r)
+	//					}
+	//				}()
+	//				fn(prev, cfg)
+	//			}()
+	//		}
+	//	}()
+	if len(snapshot) > 0 {
+		go notifyListeners(snapshot, prev, cfg)
 	}
 
 	return nil
+}
+
+func notifyListeners(snapshot []listenerEntry, prev, cfg *AppConfig) {
+	for _, e := range snapshot {
+		fn := e.fn
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintf(os.Stderr, "[config] listener panic: %v\n", r)
+				}
+			}()
+			fn(prev, cfg)
+		}()
+	}
 }
 
 func (m *Manager) Get() *AppConfig {

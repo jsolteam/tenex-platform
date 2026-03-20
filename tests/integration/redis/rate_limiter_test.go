@@ -59,7 +59,7 @@ func TestRateLimiter_WindowExpiry_ResetsCounter(t *testing.T) {
 
 	userID := key(t, "user")
 	limit := 2
-	window := 150 * time.Millisecond
+	window := 300 * time.Millisecond
 
 	// Исчерпываем лимит
 	for i := 0; i < limit; i++ {
@@ -72,8 +72,8 @@ func TestRateLimiter_WindowExpiry_ResetsCounter(t *testing.T) {
 		t.Fatal("should be blocked before window expiry")
 	}
 
-	// Ждём истечения окна
-	time.Sleep(200 * time.Millisecond)
+	// Ждём истечения окна (400ms > 300ms window, запас на Windows timer granularity ~15ms)
+	time.Sleep(400 * time.Millisecond)
 
 	// Теперь должен снова разрешить
 	allowed, err := rl.Allow(ctx, testMessenger, userID, limit, window)
