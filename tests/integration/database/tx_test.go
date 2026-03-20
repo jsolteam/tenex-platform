@@ -18,7 +18,7 @@ func openTestDB(t *testing.T) *sql.DB {
 	}
 	cfg := database.Config{
 		Host:     host,
-		Port:     5432,
+		Port:     5400,
 		User:     envOr("DB_USER", "tenex"),
 		Password: envOr("DB_PASS", "tenex"),
 		Name:     envOr("DB_NAME", "tenex"),

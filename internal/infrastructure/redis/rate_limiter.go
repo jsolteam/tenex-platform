@@ -2,6 +2,8 @@ package redis
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -12,16 +14,7 @@ import (
 	contextlog "github.com/jsolteam/tenex-platform/internal/platform/logger/context"
 )
 
-// RateLimiter — Redis sliding window rate limiter на Lua-скрипте.
-//
-// Ключ: ratelimit:{messenger}:{userID}
-// Алгоритм:
-//  1. ZREMRANGEBYSCORE удаляет записи старше окна
-//  2. ZCARD считает оставшиеся
-//  3. Если < limit — ZADD добавляет текущий timestamp, EXPIRE обновляет TTL
-//  4. Иначе — возвращает 0 (rate limited)
-//
-// Вся операция атомарна через Lua.
+// RateLimiter — Redis sliding window rate limiter.
 type RateLimiter struct {
 	client *Client
 }
@@ -47,33 +40,43 @@ func (r *RateLimiter) Allow(ctx context.Context, messenger, userID string, limit
 	now := time.Now().UnixNano()
 	windowStart := now - window.Nanoseconds()
 
+	member := fmt.Sprintf("%d_%d", now, rand.Int63()) //nolint:gosec
+
 	span.SetAttributes(
 		attribute.String("ratelimit.key", key),
 		attribute.Int("ratelimit.limit", limit),
 	)
 
+	ttlMs := window.Milliseconds()
+	if ttlMs < 1 {
+		ttlMs = 1
+	}
+
 	// Lua-скрипт — атомарный sliding window.
-	// KEYS[1] = key
-	// ARGV[1] = windowStart (nanos), ARGV[2] = now (nanos, уникальный member)
-	// ARGV[3] = limit,               ARGV[4] = TTL в секундах
+	// KEYS[1]  = key
+	// ARGV[1]  = windowStart (nanos)
+	// ARGV[2]  = score/now   (nanos)
+	// ARGV[3]  = уникальный member
+	// ARGV[4]  = limit
+	// ARGV[5]  = TTL в миллисекундах
 	const script = `
-		local key        = KEYS[1]
-		local win_start  = tonumber(ARGV[1])
-		local now        = tonumber(ARGV[2])
-		local lim        = tonumber(ARGV[3])
-		local ttl        = tonumber(ARGV[4])
-		redis.call('ZREMRANGEBYSCORE', key, '-inf', win_start)
-		local cnt = redis.call('ZCARD', key)
-		if cnt < lim then
-			redis.call('ZADD', key, now, now)
-			redis.call('EXPIRE', key, ttl)
-			return 1
-		end
-		return 0
-	`
+local key        = KEYS[1]
+local win_start  = tonumber(ARGV[1])
+local score      = tonumber(ARGV[2])
+local member     = ARGV[3]
+local lim        = tonumber(ARGV[4])
+local ttl_ms     = tonumber(ARGV[5])
+redis.call('ZREMRANGEBYSCORE', key, '-inf', win_start)
+local cnt = redis.call('ZCARD', key)
+if cnt < lim then
+    redis.call('ZADD', key, score, member)
+    redis.call('PEXPIRE', key, ttl_ms)
+    return 1
+end
+return 0`
 
 	result, err := r.client.rdb.Eval(ctx, script, []string{key},
-		windowStart, now, limit, int64(window.Seconds()),
+		windowStart, now, member, limit, ttlMs,
 	).Int()
 	if err != nil {
 		appErr := apperrors.Redis("rate_limiter.Allow", err).Retryable()
