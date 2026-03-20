@@ -28,14 +28,24 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
+    command: >
+      redis-server
+      --save 60 1000
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD}
+      --loglevel warning
     networks:
       - internal
       - tenex-prod
     healthcheck:
-      test:     ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout:  3s
-      retries:  10
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256m
 
   minio:
     image: minio/minio:latest
