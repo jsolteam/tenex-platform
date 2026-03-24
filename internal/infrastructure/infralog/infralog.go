@@ -36,6 +36,12 @@ type InfraMetrics struct {
 	OpErrors metrics.Counter
 }
 
+// ErrorRecorder описывает минимальный контракт для метрик ошибок
+// в инфраструктурных компонентах.
+type ErrorRecorder interface {
+	RecordError(ctx context.Context, component, method, code string)
+}
+
 // NewInfraMetrics регистрирует гистограмму и счётчик в переданном реестре.
 //
 // Пример для Redis:
@@ -112,7 +118,7 @@ func Err(
 	ctx context.Context,
 	l *core.Logger,
 	span tracing.Span,
-	met *InfraMetrics,
+	met ErrorRecorder,
 	component, method string,
 	msg string,
 	appErr *apperrors.AppError,
@@ -127,7 +133,9 @@ func Err(
 	)
 
 	// ── Метрики ───────────────────────────────────────────────────────────
-	met.RecordError(ctx, component, method, string(appErr.Code))
+	if met != nil {
+		met.RecordError(ctx, component, method, string(appErr.Code))
+	}
 
 	// ── Лог ───────────────────────────────────────────────────────────────
 	logFields := buildFields(appErr, extra...)
