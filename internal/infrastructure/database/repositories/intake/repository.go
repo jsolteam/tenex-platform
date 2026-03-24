@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/lib/pq"
@@ -157,20 +156,4 @@ func scanIntakes(rows *sql.Rows) ([]intake.Intake, error) {
 		result = append(result, i)
 	}
 	return result, rows.Err()
-}
-
-type pqInt64Array []int64
-
-func (a pqInt64Array) Value() (interface{}, error) {
-	if len(a) == 0 {
-		return "{}", nil
-	}
-	s := "{"
-	for i, v := range a {
-		if i > 0 {
-			s += ","
-		}
-		s += fmt.Sprintf("%d", v)
-	}
-	return s + "}", nil
 }
