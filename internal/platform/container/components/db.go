@@ -2,6 +2,7 @@ package components
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -60,4 +61,11 @@ func (d *DBComponent) DB() *database.DB {
 		panic("DBComponent.DB() called before Start()")
 	}
 	return d.db
+}
+
+func (d *DBComponent) SQL() *sql.DB {
+	if d.db == nil {
+		panic("DBComponent.SQL() called before Start()")
+	}
+	return d.db.SQL()
 }

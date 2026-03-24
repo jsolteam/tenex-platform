@@ -38,6 +38,10 @@ type DB struct {
 	*sql.DB
 }
 
+func (d *DB) SQL() *sql.DB {
+	return d.DB
+}
+
 func Open(ctx context.Context, cfg Config) (*sql.DB, error) {
 	db, err := sql.Open("postgres", cfg.DSN())
 	if err != nil {

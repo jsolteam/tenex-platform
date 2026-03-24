@@ -24,13 +24,17 @@ func openTestDB(t *testing.T) *sql.DB {
 		Name:     envOr("DB_NAME", "tenex"),
 		SSLMode:  envOr("DB_SSL_MODE", "disable"),
 	}
-	db, err := database.Open(context.Background(), cfg)
+	rawDB, err := database.Open(context.Background(), cfg)
 	if err != nil {
 		t.Skipf("cannot connect to test database: %v", err)
 		return nil
 	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
+
+	wrapped := &database.DB{DB: rawDB}
+	sqlDB := wrapped.SQL()
+
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	return sqlDB
 }
 
 func envOr(key, fallback string) string {
@@ -38,6 +42,37 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func TestDatabaseConfig_DSN(t *testing.T) {
+	cfg := database.Config{
+		Host:     "localhost",
+		Port:     5432,
+		User:     "myuser",
+		Password: "mypass",
+		Name:     "mydb",
+		SSLMode:  "disable",
+	}
+	dsn := cfg.DSN()
+	for _, want := range []string{"localhost", "5432", "myuser", "mypass", "mydb", "disable"} {
+		if !containsStr(dsn, want) {
+			t.Errorf("DSN missing %q: %s", want, dsn)
+		}
+	}
+}
+
+func TestDB_SQL_ReturnsSameUnderlying(t *testing.T) {
+	raw, err := sql.Open("postgres", "host=localhost port=5432 user=x dbname=x sslmode=disable")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	defer raw.Close()
+
+	wrapped := &database.DB{DB: raw}
+
+	if got := wrapped.SQL(); got != raw {
+		t.Errorf("SQL() returned a different pointer than the wrapped *sql.DB")
+	}
 }
 
 func TestWithTx_CommitOnSuccess(t *testing.T) {
@@ -100,14 +135,13 @@ func TestWithTx_ContextCancelled(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // отменяем сразу
+	cancel() // cancel immediately
 
 	err := database.WithTx(ctx, db, func(ctx context.Context, tx *sql.Tx) error {
 		return nil
 	})
-	// BeginTx с отменённым контекстом должен вернуть ошибку
+	// BeginTx with a cancelled context should return an error.
 	if err == nil {
-		// некоторые драйверы могут успеть начать транзакцию — не фатально
 		t.Log("note: WithTx succeeded despite cancelled context")
 	}
 }
@@ -141,28 +175,6 @@ func TestWithTxOpts_RollbackOnError(t *testing.T) {
 	if !errors.Is(err, sentinel) {
 		t.Errorf("expected sentinel, got: %v", err)
 	}
-}
-
-func TestDatabaseConfig_DSN(t *testing.T) {
-	cfg := database.Config{
-		Host:     "localhost",
-		Port:     5432,
-		User:     "myuser",
-		Password: "mypass",
-		Name:     "mydb",
-		SSLMode:  "disable",
-	}
-	dsn := cfg.DSN()
-	for _, want := range []string{"localhost", "5432", "myuser", "mypass", "mydb", "disable"} {
-		if !contains(dsn, want) {
-			t.Errorf("DSN missing %q: %s", want, dsn)
-		}
-	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr ||
-		len(s) > 0 && containsStr(s, substr))
 }
 
 func containsStr(s, sub string) bool {
