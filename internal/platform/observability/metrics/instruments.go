@@ -6,6 +6,7 @@ const (
 	LabelHandler   = "handler"
 	LabelState     = "state"
 	LabelModule    = "module"
+	LabelComponent = "component"
 )
 
 var processingDurationBuckets = []float64{
