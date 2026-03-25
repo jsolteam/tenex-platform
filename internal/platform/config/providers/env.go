@@ -23,6 +23,7 @@ var envBindings = []struct {
 	{"s3.key", "S3_KEY"},
 	{"s3.secret", "S3_SECRET"},
 	{"s3.bucket", "S3_BUCKET"},
+	{"s3.use_ssl", "S3_USE_SSL"},
 	{"observability.otlp_endpoint", "OTEL_ENDPOINT"},
 	{"observability.loki_endpoint", "LOKI_ENDPOINT"},
 	{"observability.metrics_port", "METRICS_PORT"},
