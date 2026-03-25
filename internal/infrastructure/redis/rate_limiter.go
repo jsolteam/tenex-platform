@@ -7,21 +7,22 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 
+	"github.com/jsolteam/tenex-platform/internal/infrastructure/infralog"
 	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
-	contextlog "github.com/jsolteam/tenex-platform/internal/platform/logger/context"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 )
 
 // RateLimiter — Redis sliding window rate limiter.
 type RateLimiter struct {
 	client *Client
+	met    *metrics.RedisMetrics
 }
 
 // NewRateLimiter создаёт RateLimiter поверх существующего Client.
 func NewRateLimiter(c *Client) *RateLimiter {
-	return &RateLimiter{client: c}
+	return &RateLimiter{client: c, met: c.met}
 }
 
 // Allow проверяет и при возможности фиксирует запрос пользователя.
@@ -35,6 +36,10 @@ func NewRateLimiter(c *Client) *RateLimiter {
 func (r *RateLimiter) Allow(ctx context.Context, messenger, userID string, limit int, window time.Duration) (bool, error) {
 	ctx, span := r.client.tracer.Start(ctx, "rate_limiter.Allow")
 	defer span.End()
+	start := time.Now()
+	defer func() {
+		r.met.RecordDuration(ctx, metrics.RedisComponentRateLimiter, "Allow", time.Since(start).Seconds())
+	}()
 
 	key := rateLimitKey(messenger, userID)
 	now := time.Now().UnixNano()
@@ -80,10 +85,8 @@ return 0`
 	).Int()
 	if err != nil {
 		appErr := apperrors.Redis("rate_limiter.Allow", err).Retryable()
-		span.RecordError(appErr)
-		span.SetStatus(codes.Error, string(appErr.Code))
-		contextlog.FromCtx(ctx, r.client.log).Error("rate limiter eval failed",
-			zap.Error(appErr),
+		infralog.Err(ctx, r.client.log, span, r.met,
+			metrics.RedisComponentRateLimiter, "Allow", "rate limiter eval failed", appErr,
 			zap.String("key", key),
 		)
 		return false, appErr
@@ -92,7 +95,7 @@ return 0`
 	allowed := result == 1
 	span.SetAttributes(attribute.Bool("ratelimit.allowed", allowed))
 	if !allowed {
-		contextlog.FromCtx(ctx, r.client.log).Debug("rate limit exceeded",
+		infralog.Debug(ctx, r.client.log, "rate limit exceeded",
 			zap.String("key", key),
 			zap.Int("limit", limit),
 			zap.Duration("window", window),
@@ -106,12 +109,18 @@ return 0`
 func (r *RateLimiter) Reset(ctx context.Context, messenger, userID string) error {
 	ctx, span := r.client.tracer.Start(ctx, "rate_limiter.Reset")
 	defer span.End()
+	start := time.Now()
+	defer func() {
+		r.met.RecordDuration(ctx, metrics.RedisComponentRateLimiter, "Reset", time.Since(start).Seconds())
+	}()
 
 	key := rateLimitKey(messenger, userID)
 	if err := r.client.rdb.Del(ctx, key).Err(); err != nil {
 		appErr := apperrors.Redis("rate_limiter.Reset", err)
-		span.RecordError(appErr)
-		span.SetStatus(codes.Error, string(appErr.Code))
+		infralog.Err(ctx, r.client.log, span, r.met,
+			metrics.RedisComponentRateLimiter, "Reset", "rate limiter reset failed", appErr,
+			zap.String("key", key),
+		)
 		return appErr
 	}
 	return nil
