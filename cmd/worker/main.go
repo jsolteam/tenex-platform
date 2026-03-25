@@ -16,12 +16,24 @@ func main() {
 	ctx := context.Background()
 
 	cfgComp := components.NewConfig(os.Getenv("CONFIG_FILE"))
+	metricsComp := components.NewMetrics(cfgComp)
+	tracingComp := components.NewTracing(cfgComp)
+	dbComp := components.NewDB(cfgComp)
+	redisComp := components.NewRedis(cfgComp, tracingComp, metricsComp)
+	s3Comp := components.NewS3(cfgComp, tracingComp)
+	reposComp := components.NewRepositories(dbComp, tracingComp, metricsComp)
+	workerSvcComp := components.NewWorkerService(reposComp, redisComp, s3Comp)
 
 	c := container.New()
 	c.Register("config", cfgComp)
-	c.Register("metrics", components.NewMetrics(cfgComp))
-	c.Register("tracing", components.NewTracing(cfgComp))
+	c.Register("metrics", metricsComp)
+	c.Register("tracing", tracingComp)
 	c.Register("logger", components.NewLogger(cfgComp))
+	c.Register("db", dbComp)
+	c.Register("redis", redisComp)
+	c.Register("s3", s3Comp)
+	c.Register("repositories", reposComp)
+	c.Register("worker-service", workerSvcComp)
 
 	if err := c.Start(ctx); err != nil {
 		_, _ = os.Stderr.WriteString("worker: platform start failed: " + err.Error() + "\n")
@@ -38,8 +50,9 @@ func main() {
 		return nil
 	})
 
-	sm.Register("workers", func(_ context.Context) error {
-		l.Info("worker: finish in-flight tasks")
+	sm.Register("workers", func(shutCtx context.Context) error {
+		l.Info("worker: wait in-flight tasks")
+		workerSvcComp.WaitInFlight(shutCtx)
 		return nil
 	})
 
