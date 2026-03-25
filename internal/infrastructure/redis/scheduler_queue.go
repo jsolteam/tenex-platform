@@ -8,11 +8,11 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 
+	"github.com/jsolteam/tenex-platform/internal/infrastructure/infralog"
 	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
-	contextlog "github.com/jsolteam/tenex-platform/internal/platform/logger/context"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 )
 
 const schedulerQueueKey = "scheduler:reminders"
@@ -35,11 +35,12 @@ type ScheduledItem struct {
 // после успешной обработки вызывает Remove.
 type SchedulerQueue struct {
 	client *Client
+	met    *metrics.RedisMetrics
 }
 
 // NewSchedulerQueue создаёт SchedulerQueue поверх существующего Client.
 func NewSchedulerQueue(c *Client) *SchedulerQueue {
-	return &SchedulerQueue{client: c}
+	return &SchedulerQueue{client: c, met: c.redisMetrics()}
 }
 
 // Enqueue добавляет напоминание в очередь.
@@ -47,6 +48,10 @@ func NewSchedulerQueue(c *Client) *SchedulerQueue {
 func (q *SchedulerQueue) Enqueue(ctx context.Context, reminderID int64, at time.Time) error {
 	ctx, span := q.client.tracer.Start(ctx, "scheduler_queue.Enqueue")
 	defer span.End()
+	start := time.Now()
+	defer func() {
+		q.met.RecordDuration(ctx, metrics.RedisComponentQueue, "Enqueue", time.Since(start).Seconds())
+	}()
 	span.SetAttributes(
 		attribute.Int64("reminder.id", reminderID),
 		attribute.String("reminder.scheduled_at", at.UTC().Format(time.RFC3339)),
@@ -61,16 +66,14 @@ func (q *SchedulerQueue) Enqueue(ctx context.Context, reminderID int64, at time.
 	}).Err(); err != nil {
 		appErr := apperrors.Redis("scheduler_queue.Enqueue", err).
 			With("reminder_id", reminderID)
-		span.RecordError(appErr)
-		span.SetStatus(codes.Error, string(appErr.Code))
-		contextlog.FromCtx(ctx, q.client.log).Error("scheduler enqueue failed",
-			zap.Error(appErr),
+		infralog.Err(ctx, q.client.log, span, q.met,
+			metrics.RedisComponentQueue, "Enqueue", "scheduler enqueue failed", appErr,
 			zap.Int64("reminder_id", reminderID),
 		)
 		return appErr
 	}
 
-	contextlog.FromCtx(ctx, q.client.log).Debug("reminder enqueued",
+	infralog.Debug(ctx, q.client.log, "reminder enqueued",
 		zap.Int64("reminder_id", reminderID),
 		zap.Time("scheduled_at", at),
 	)
@@ -82,6 +85,10 @@ func (q *SchedulerQueue) Enqueue(ctx context.Context, reminderID int64, at time.
 func (q *SchedulerQueue) PollDue(ctx context.Context, limit int) ([]ScheduledItem, error) {
 	ctx, span := q.client.tracer.Start(ctx, "scheduler_queue.PollDue")
 	defer span.End()
+	start := time.Now()
+	defer func() {
+		q.met.RecordDuration(ctx, metrics.RedisComponentQueue, "PollDue", time.Since(start).Seconds())
+	}()
 
 	now := float64(time.Now().UTC().Unix())
 
@@ -93,11 +100,8 @@ func (q *SchedulerQueue) PollDue(ctx context.Context, limit int) ([]ScheduledIte
 	}).Result()
 	if err != nil {
 		appErr := apperrors.Redis("scheduler_queue.PollDue", err)
-		span.RecordError(appErr)
-		span.SetStatus(codes.Error, string(appErr.Code))
-		contextlog.FromCtx(ctx, q.client.log).Error("scheduler poll failed",
-			zap.Error(appErr),
-		)
+		infralog.Err(ctx, q.client.log, span, q.met,
+			metrics.RedisComponentQueue, "PollDue", "scheduler poll failed", appErr)
 		return nil, appErr
 	}
 
@@ -105,7 +109,7 @@ func (q *SchedulerQueue) PollDue(ctx context.Context, limit int) ([]ScheduledIte
 	for _, z := range results {
 		id, err := parseMemberKey(z.Member.(string))
 		if err != nil {
-			contextlog.FromCtx(ctx, q.client.log).Warn("scheduler: invalid member key",
+			infralog.Debug(ctx, q.client.log, "scheduler: invalid member key",
 				zap.String("member", z.Member.(string)),
 				zap.Error(err),
 			)
@@ -125,15 +129,17 @@ func (q *SchedulerQueue) PollDue(ctx context.Context, limit int) ([]ScheduledIte
 func (q *SchedulerQueue) Remove(ctx context.Context, reminderID int64) error {
 	ctx, span := q.client.tracer.Start(ctx, "scheduler_queue.Remove")
 	defer span.End()
+	start := time.Now()
+	defer func() {
+		q.met.RecordDuration(ctx, metrics.RedisComponentQueue, "Remove", time.Since(start).Seconds())
+	}()
 	span.SetAttributes(attribute.Int64("reminder.id", reminderID))
 
 	if err := q.client.rdb.ZRem(ctx, schedulerQueueKey, memberKey(reminderID)).Err(); err != nil {
 		appErr := apperrors.Redis("scheduler_queue.Remove", err).
 			With("reminder_id", reminderID)
-		span.RecordError(appErr)
-		span.SetStatus(codes.Error, string(appErr.Code))
-		contextlog.FromCtx(ctx, q.client.log).Error("scheduler remove failed",
-			zap.Error(appErr),
+		infralog.Err(ctx, q.client.log, span, q.met,
+			metrics.RedisComponentQueue, "Remove", "scheduler remove failed", appErr,
 			zap.Int64("reminder_id", reminderID),
 		)
 		return appErr
@@ -146,12 +152,16 @@ func (q *SchedulerQueue) Remove(ctx context.Context, reminderID int64) error {
 func (q *SchedulerQueue) Size(ctx context.Context) (int64, error) {
 	ctx, span := q.client.tracer.Start(ctx, "scheduler_queue.Size")
 	defer span.End()
+	start := time.Now()
+	defer func() {
+		q.met.RecordDuration(ctx, metrics.RedisComponentQueue, "Size", time.Since(start).Seconds())
+	}()
 
 	n, err := q.client.rdb.ZCard(ctx, schedulerQueueKey).Result()
 	if err != nil {
 		appErr := apperrors.Redis("scheduler_queue.Size", err)
-		span.RecordError(appErr)
-		span.SetStatus(codes.Error, string(appErr.Code))
+		infralog.Err(ctx, q.client.log, span, q.met,
+			metrics.RedisComponentQueue, "Size", "scheduler size failed", appErr)
 		return 0, appErr
 	}
 	return n, nil

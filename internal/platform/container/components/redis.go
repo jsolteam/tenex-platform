@@ -6,12 +6,14 @@ import (
 
 	infraredis "github.com/jsolteam/tenex-platform/internal/infrastructure/redis"
 	"github.com/jsolteam/tenex-platform/internal/platform/logger/facade"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
 
 type RedisComponent struct {
 	cfg    *ConfigComponent
 	tracer *TracingComponent
+	met    *MetricsComponent
 
 	client         *infraredis.Client
 	FSMStore       *infraredis.FSMStore
@@ -23,8 +25,8 @@ type RedisComponent struct {
 
 // NewRedis создаёт RedisComponent.
 // cfg — обязателен. tracer — может быть nil (будет использован noop).
-func NewRedis(cfg *ConfigComponent, tracer *TracingComponent) *RedisComponent {
-	return &RedisComponent{cfg: cfg, tracer: tracer}
+func NewRedis(cfg *ConfigComponent, tracer *TracingComponent, met *MetricsComponent) *RedisComponent {
+	return &RedisComponent{cfg: cfg, tracer: tracer, met: met}
 }
 
 // Start подключается к Redis и инициализирует все компоненты.
@@ -48,7 +50,20 @@ func (r *RedisComponent) Start(ctx context.Context) error {
 		DB:       appCfg.Redis.DB,
 	}
 
-	client, err := infraredis.New(ctx, redisCfg, log, tr)
+	var (
+		redisMet *metrics.RedisMetrics
+		err      error
+	)
+	if r.met != nil {
+		redisMet, err = metrics.NewRedisMetrics(r.met.Registry())
+		if err != nil {
+			return fmt.Errorf("redis component metrics: %w", err)
+		}
+	} else {
+		redisMet, _ = metrics.NewRedisMetrics(metrics.NewNoop())
+	}
+
+	client, err := infraredis.New(ctx, redisCfg, log, tr, redisMet)
 	if err != nil {
 		return fmt.Errorf("redis component: %w", err)
 	}
