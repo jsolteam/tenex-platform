@@ -47,6 +47,7 @@ func main() {
 
 	sm.Register("updates", func(_ context.Context) error {
 		l.Info("bot: stop accepting updates")
+		botComp.StopUpdates()
 		return nil
 	})
 
