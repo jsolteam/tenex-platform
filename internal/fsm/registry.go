@@ -118,6 +118,7 @@ func (r *Registry) States() []State {
 }
 
 // Dot генерирует граф переходов в формате Graphviz DOT для визуализации.
+//
 //	dot -Tpng -o fsm.png <<< $(go run ./tools/fsm_graph)
 func (r *Registry) Dot() string {
 	r.mu.RLock()
