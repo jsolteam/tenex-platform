@@ -20,7 +20,7 @@ func main() {
 	tracingComp := components.NewTracing(cfgComp)
 	dbComp := components.NewDB(cfgComp)
 	redisComp := components.NewRedis(cfgComp, tracingComp, metricsComp)
-	s3Comp := components.NewS3(cfgComp, tracingComp)
+	s3Comp := components.NewS3(cfgComp, tracingComp, metricsComp)
 	reposComp := components.NewRepositories(dbComp, tracingComp, metricsComp)
 	botComp := components.NewBot(cfgComp, reposComp, os.Getenv("MESSENGER"), os.Getenv("MESSENGER_TOKEN"))
 
