@@ -9,11 +9,11 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 
+	"github.com/jsolteam/tenex-platform/internal/infrastructure/infralog"
 	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
-	contextlog "github.com/jsolteam/tenex-platform/internal/platform/logger/context"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 )
 
 // ErrLockNotAcquired возвращается если лок уже удерживается другим процессом.
@@ -23,6 +23,7 @@ var ErrLockNotAcquired = errors.New("lock: not acquired")
 // Получается через DistributedLocker.Acquire и освобождается через Release.
 type Lock struct {
 	client *Client
+	met    *metrics.RedisMetrics
 	key    string
 	token  string // случайный токен для защиты от чужого Release
 }
@@ -33,6 +34,10 @@ type Lock struct {
 func (l *Lock) Release(ctx context.Context) error {
 	ctx, span := l.client.tracer.Start(ctx, "lock.Release")
 	defer span.End()
+	start := time.Now()
+	defer func() {
+		l.met.RecordDuration(ctx, metrics.RedisComponentLock, "Release", time.Since(start).Seconds())
+	}()
 	span.SetAttributes(attribute.String("lock.key", l.key))
 
 	const script = `
@@ -45,17 +50,15 @@ func (l *Lock) Release(ctx context.Context) error {
 	result, err := l.client.rdb.Eval(ctx, script, []string{l.key}, l.token).Int()
 	if err != nil && !errors.Is(err, goredis.Nil) {
 		appErr := apperrors.Redis("lock.Release", err)
-		span.RecordError(appErr)
-		span.SetStatus(codes.Error, string(appErr.Code))
-		contextlog.FromCtx(ctx, l.client.log).Error("lock release failed",
-			zap.Error(appErr),
+		infralog.Err(ctx, l.client.log, span, l.met,
+			metrics.RedisComponentLock, "Release", "lock release failed", appErr,
 			zap.String("key", l.key),
 		)
 		return appErr
 	}
 
 	if result == 0 {
-		contextlog.FromCtx(ctx, l.client.log).Debug("lock already released or owned by another",
+		infralog.Debug(ctx, l.client.log, "lock already released or owned by another",
 			zap.String("key", l.key),
 		)
 	}
@@ -71,11 +74,12 @@ func (l *Lock) Release(ctx context.Context) error {
 // TTL:  передаётся при Acquire, защищает от вечного лока при падении воркера
 type DistributedLocker struct {
 	client *Client
+	met    *metrics.RedisMetrics
 }
 
 // NewDistributedLocker создаёт DistributedLocker поверх существующего Client.
 func NewDistributedLocker(c *Client) *DistributedLocker {
-	return &DistributedLocker{client: c}
+	return &DistributedLocker{client: c, met: c.met}
 }
 
 // Acquire пытается захватить лок.
@@ -88,6 +92,10 @@ func NewDistributedLocker(c *Client) *DistributedLocker {
 func (dl *DistributedLocker) Acquire(ctx context.Context, namespace, id string, ttl time.Duration) (*Lock, error) {
 	ctx, span := dl.client.tracer.Start(ctx, "lock.Acquire")
 	defer span.End()
+	start := time.Now()
+	defer func() {
+		dl.met.RecordDuration(ctx, metrics.RedisComponentLock, "Acquire", time.Since(start).Seconds())
+	}()
 
 	key := lockKey(namespace, id)
 	span.SetAttributes(
@@ -104,10 +112,8 @@ func (dl *DistributedLocker) Acquire(ctx context.Context, namespace, id string, 
 	ok, err := dl.client.rdb.SetNX(ctx, key, token, ttl).Result()
 	if err != nil {
 		appErr := apperrors.Redis("lock.Acquire", err)
-		span.RecordError(appErr)
-		span.SetStatus(codes.Error, string(appErr.Code))
-		contextlog.FromCtx(ctx, dl.client.log).Error("lock acquire failed",
-			zap.Error(appErr),
+		infralog.Err(ctx, dl.client.log, span, dl.met,
+			metrics.RedisComponentLock, "Acquire", "lock acquire failed", appErr,
 			zap.String("key", key),
 		)
 		return nil, appErr
@@ -119,11 +125,11 @@ func (dl *DistributedLocker) Acquire(ctx context.Context, namespace, id string, 
 	}
 
 	span.SetAttributes(attribute.Bool("lock.acquired", true))
-	contextlog.FromCtx(ctx, dl.client.log).Debug("lock acquired",
+	infralog.Debug(ctx, dl.client.log, "lock acquired",
 		zap.String("key", key),
 		zap.Duration("ttl", ttl),
 	)
-	return &Lock{client: dl.client, key: key, token: token}, nil
+	return &Lock{client: dl.client, met: dl.met, key: key, token: token}, nil
 }
 
 // lockKey: lock:{namespace}:{id}
