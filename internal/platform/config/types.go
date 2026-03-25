@@ -47,6 +47,7 @@ type S3 struct {
 	Key      string `mapstructure:"key"`
 	Secret   string `mapstructure:"secret"`
 	Bucket   string `mapstructure:"bucket"`
+	UseSSL   bool   `mapstructure:"use_ssl"`
 }
 
 type Scheduler struct {
