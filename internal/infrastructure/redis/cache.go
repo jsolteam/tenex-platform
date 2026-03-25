@@ -26,7 +26,7 @@ type Cache struct {
 
 // NewCache создаёт Cache поверх существующего Client.
 func NewCache(c *Client) *Cache {
-	return &Cache{client: c, met: c.met}
+	return &Cache{client: c, met: c.redisMetrics()}
 }
 
 // Get возвращает значение по ключу.

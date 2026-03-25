@@ -22,7 +22,7 @@ type RateLimiter struct {
 
 // NewRateLimiter создаёт RateLimiter поверх существующего Client.
 func NewRateLimiter(c *Client) *RateLimiter {
-	return &RateLimiter{client: c, met: c.met}
+	return &RateLimiter{client: c, met: c.redisMetrics()}
 }
 
 // Allow проверяет и при возможности фиксирует запрос пользователя.

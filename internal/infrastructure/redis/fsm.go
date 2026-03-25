@@ -37,7 +37,7 @@ type FSMStore struct {
 
 // NewFSMStore создаёт FSMStore поверх существующего Client.
 func NewFSMStore(c *Client) *FSMStore {
-	return &FSMStore{client: c}
+	return &FSMStore{client: c, met: c.redisMetrics()}
 }
 
 // Get возвращает текущее состояние пользователя.

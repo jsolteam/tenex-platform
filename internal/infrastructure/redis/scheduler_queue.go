@@ -40,7 +40,7 @@ type SchedulerQueue struct {
 
 // NewSchedulerQueue создаёт SchedulerQueue поверх существующего Client.
 func NewSchedulerQueue(c *Client) *SchedulerQueue {
-	return &SchedulerQueue{client: c, met: c.met}
+	return &SchedulerQueue{client: c, met: c.redisMetrics()}
 }
 
 // Enqueue добавляет напоминание в очередь.

@@ -79,7 +79,7 @@ type DistributedLocker struct {
 
 // NewDistributedLocker создаёт DistributedLocker поверх существующего Client.
 func NewDistributedLocker(c *Client) *DistributedLocker {
-	return &DistributedLocker{client: c, met: c.met}
+	return &DistributedLocker{client: c, met: c.redisMetrics()}
 }
 
 // Acquire пытается захватить лок.

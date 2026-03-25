@@ -36,6 +36,14 @@ type Client struct {
 	met    *metrics.RedisMetrics
 }
 
+func (c *Client) redisMetrics() *metrics.RedisMetrics {
+	if c.met == nil {
+		noopMet, _ := metrics.NewRedisMetrics(metrics.NewNoop())
+		c.met = noopMet
+	}
+	return c.met
+}
+
 // New создаёт нового клиента, проверяет соединение через Ping и возвращает готовый Client.
 // Возвращает apperrors.ErrRedisUnavailable при любой ошибке подключения.
 func New(
@@ -94,14 +102,14 @@ func New(
 func (c *Client) Close() error {
 	start := time.Now()
 	defer func() {
-		c.met.RecordDuration(context.Background(), "client", "Close", time.Since(start).Seconds())
+		c.redisMetrics().RecordDuration(context.Background(), "client", "Close", time.Since(start).Seconds())
 	}()
 
 	if err := c.rdb.Close(); err != nil {
 		appErr := apperrors.Redis("redis.Close", err)
 		ctx, span := c.tracer.Start(context.Background(), "redis.Close")
 		defer span.End()
-		infralog.Err(ctx, c.log, span, c.met, "client", "Close", "redis close failed", appErr)
+		infralog.Err(ctx, c.log, span, c.redisMetrics(), "client", "Close", "redis close failed", appErr)
 		return appErr
 	}
 	return nil
@@ -114,12 +122,12 @@ func (c *Client) Ping(ctx context.Context) error {
 	defer span.End()
 	start := time.Now()
 	defer func() {
-		c.met.RecordDuration(ctx, "client", "Ping", time.Since(start).Seconds())
+		c.redisMetrics().RecordDuration(ctx, "client", "Ping", time.Since(start).Seconds())
 	}()
 
 	if err := c.rdb.Ping(ctx).Err(); err != nil {
 		appErr := apperrors.Redis("redis.Ping", err).Retryable()
-		infralog.Err(ctx, c.log, span, c.met, "client", "Ping", "redis ping failed", appErr)
+		infralog.Err(ctx, c.log, span, c.redisMetrics(), "client", "Ping", "redis ping failed", appErr)
 		return appErr
 	}
 	return nil
