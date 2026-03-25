@@ -6,17 +6,19 @@ import (
 
 	infras3 "github.com/jsolteam/tenex-platform/internal/infrastructure/s3"
 	"github.com/jsolteam/tenex-platform/internal/platform/logger/facade"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
 
 type S3Component struct {
 	cfg    *ConfigComponent
 	tracer *TracingComponent
+	met    *MetricsComponent
 	client *infras3.Client
 }
 
-func NewS3(cfg *ConfigComponent, tracer *TracingComponent) *S3Component {
-	return &S3Component{cfg: cfg, tracer: tracer}
+func NewS3(cfg *ConfigComponent, tracer *TracingComponent, met *MetricsComponent) *S3Component {
+	return &S3Component{cfg: cfg, tracer: tracer, met: met}
 }
 
 func (s *S3Component) Start(ctx context.Context) error {
@@ -38,7 +40,20 @@ func (s *S3Component) Start(ctx context.Context) error {
 		UseSSL:   appCfg.S3.UseSSL,
 	}
 
-	client, err := infras3.New(ctx, cfg, log, tr)
+	var (
+		s3Met *metrics.S3Metrics
+		err   error
+	)
+	if s.met != nil {
+		s3Met, err = metrics.NewS3Metrics(s.met.Registry())
+		if err != nil {
+			return fmt.Errorf("s3 component metrics: %w", err)
+		}
+	} else {
+		s3Met, _ = metrics.NewS3Metrics(metrics.NewNoop())
+	}
+
+	client, err := infras3.New(ctx, cfg, log, tr, s3Met)
 	if err != nil {
 		return fmt.Errorf("s3 component: %w", err)
 	}
