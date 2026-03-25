@@ -16,12 +16,22 @@ func main() {
 	ctx := context.Background()
 
 	cfgComp := components.NewConfig(os.Getenv("CONFIG_FILE"))
+	metricsComp := components.NewMetrics(cfgComp)
+	tracingComp := components.NewTracing(cfgComp)
+	dbComp := components.NewDB(cfgComp)
+	redisComp := components.NewRedis(cfgComp, tracingComp, metricsComp)
+	reposComp := components.NewRepositories(dbComp, tracingComp, metricsComp)
+	schedulerSvcComp := components.NewSchedulerService(reposComp, redisComp)
 
 	c := container.New()
 	c.Register("config", cfgComp)
-	c.Register("metrics", components.NewMetrics(cfgComp))
-	c.Register("tracing", components.NewTracing(cfgComp))
+	c.Register("metrics", metricsComp)
+	c.Register("tracing", tracingComp)
 	c.Register("logger", components.NewLogger(cfgComp))
+	c.Register("db", dbComp)
+	c.Register("redis", redisComp)
+	c.Register("repositories", reposComp)
+	c.Register("scheduler-service", schedulerSvcComp)
 
 	if err := c.Start(ctx); err != nil {
 		_, _ = os.Stderr.WriteString("scheduler: platform start failed: " + err.Error() + "\n")
@@ -34,12 +44,14 @@ func main() {
 	sm := shutdown.New(cfgComp.Get().App.ShutdownTimeout)
 
 	sm.Register("updates", func(_ context.Context) error {
-		l.Info("scheduler: stop accepting new jobs")
+		l.Info("scheduler: stop reminder generator")
+		schedulerSvcComp.StopGenerator()
 		return nil
 	})
 
-	sm.Register("workers", func(_ context.Context) error {
-		l.Info("scheduler: drain in-progress jobs")
+	sm.Register("workers", func(shutCtx context.Context) error {
+		l.Info("scheduler: wait current cycle")
+		schedulerSvcComp.WaitCurrentCycle(shutCtx)
 		return nil
 	})
 
