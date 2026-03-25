@@ -16,12 +16,24 @@ func main() {
 	ctx := context.Background()
 
 	cfgComp := components.NewConfig(os.Getenv("CONFIG_FILE"))
+	metricsComp := components.NewMetrics(cfgComp)
+	tracingComp := components.NewTracing(cfgComp)
+	dbComp := components.NewDB(cfgComp)
+	redisComp := components.NewRedis(cfgComp, tracingComp, metricsComp)
+	s3Comp := components.NewS3(cfgComp, tracingComp)
+	reposComp := components.NewRepositories(dbComp, tracingComp, metricsComp)
+	botComp := components.NewBot(cfgComp, reposComp, os.Getenv("MESSENGER"), os.Getenv("MESSENGER_TOKEN"))
 
 	c := container.New()
 	c.Register("config", cfgComp)
-	c.Register("metrics", components.NewMetrics(cfgComp))
-	c.Register("tracing", components.NewTracing(cfgComp))
+	c.Register("metrics", metricsComp)
+	c.Register("tracing", tracingComp)
 	c.Register("logger", components.NewLogger(cfgComp))
+	c.Register("db", dbComp)
+	c.Register("redis", redisComp)
+	c.Register("s3", s3Comp)
+	c.Register("repositories", reposComp)
+	c.Register("bot", botComp)
 
 	if err := c.Start(ctx); err != nil {
 		_, _ = os.Stderr.WriteString("bot: platform start failed: " + err.Error() + "\n")
@@ -35,11 +47,13 @@ func main() {
 
 	sm.Register("updates", func(_ context.Context) error {
 		l.Info("bot: stop accepting updates")
+		botComp.StopUpdates()
 		return nil
 	})
 
-	sm.Register("workers", func(_ context.Context) error {
-		l.Info("bot: stop workers")
+	sm.Register("workers", func(shutCtx context.Context) error {
+		l.Info("bot: wait in-flight workers")
+		botComp.WaitWorkers(shutCtx)
 		return nil
 	})
 
