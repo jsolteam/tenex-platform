@@ -4,14 +4,13 @@ import (
 	"context"
 	"time"
 
+	"github.com/jsolteam/tenex-platform/internal/infrastructure/infralog"
 	goredis "github.com/redis/go-redis/v9"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 
 	apperrors "github.com/jsolteam/tenex-platform/internal/platform/errors"
-	contextlog "github.com/jsolteam/tenex-platform/internal/platform/logger/context"
 	"github.com/jsolteam/tenex-platform/internal/platform/logger/core"
+	"github.com/jsolteam/tenex-platform/internal/platform/observability/metrics"
 	"github.com/jsolteam/tenex-platform/internal/platform/observability/tracing"
 )
 
@@ -34,11 +33,27 @@ type Client struct {
 	rdb    *goredis.Client
 	log    *core.Logger
 	tracer tracing.Tracer
+	met    *metrics.RedisMetrics
 }
 
 // New создаёт нового клиента, проверяет соединение через Ping и возвращает готовый Client.
 // Возвращает apperrors.ErrRedisUnavailable при любой ошибке подключения.
-func New(ctx context.Context, cfg Config, log *core.Logger, tracer tracing.Tracer) (*Client, error) {
+func New(
+	ctx context.Context,
+	cfg Config,
+	log *core.Logger,
+	tracer tracing.Tracer,
+	metOpt ...*metrics.RedisMetrics,
+) (*Client, error) {
+	var met *metrics.RedisMetrics
+	if len(metOpt) > 0 {
+		met = metOpt[0]
+	}
+	if met == nil {
+		noopMet, _ := metrics.NewRedisMetrics(metrics.NewNoop())
+		met = noopMet
+	}
+
 	l := log.With(zap.String("component", "redis"), zap.String("addr", cfg.Addr))
 
 	rdb := goredis.NewClient(&goredis.Options{
@@ -57,34 +72,38 @@ func New(ctx context.Context, cfg Config, log *core.Logger, tracer tracing.Trace
 
 	ctx2, span := tracer.Start(pingCtx, "redis.New.ping")
 	defer span.End()
+	start := time.Now()
+	defer func() {
+		met.RecordDuration(ctx2, "client", "New.ping", time.Since(start).Seconds())
+	}()
 
 	if err := rdb.Ping(ctx2).Err(); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, string(apperrors.ErrRedisUnavailable))
-		span.SetAttributes(attribute.String("redis.addr", cfg.Addr))
-
 		appErr := apperrors.Redis("redis.New.ping", err)
-		contextlog.FromCtx(ctx, l).Error("redis ping failed",
-			zap.Error(appErr),
+		infralog.Err(ctx2, l, span, met,
+			"client", "New.ping", "redis ping failed", appErr,
 			zap.String("addr", cfg.Addr),
 		)
 		_ = rdb.Close()
 		return nil, appErr
 	}
-
-	contextlog.FromCtx(ctx, l).Info("redis connected", zap.String("addr", cfg.Addr))
-	return &Client{rdb: rdb, log: l, tracer: tracer}, nil
+	return &Client{rdb: rdb, log: l, tracer: tracer, met: met}, nil
 }
 
 // Close закрывает соединение с Redis.
 // Логирует ошибку при закрытии, но всегда возвращает её наружу.
 func (c *Client) Close() error {
+	start := time.Now()
+	defer func() {
+		c.met.RecordDuration(context.Background(), "client", "Close", time.Since(start).Seconds())
+	}()
+
 	if err := c.rdb.Close(); err != nil {
 		appErr := apperrors.Redis("redis.Close", err)
-		c.log.Error("redis close failed", zap.Error(appErr))
+		ctx, span := c.tracer.Start(context.Background(), "redis.Close")
+		defer span.End()
+		infralog.Err(ctx, c.log, span, c.met, "client", "Close", "redis close failed", appErr)
 		return appErr
 	}
-	c.log.Info("redis connection closed")
 	return nil
 }
 
@@ -93,13 +112,14 @@ func (c *Client) Close() error {
 func (c *Client) Ping(ctx context.Context) error {
 	ctx, span := c.tracer.Start(ctx, "redis.Ping")
 	defer span.End()
+	start := time.Now()
+	defer func() {
+		c.met.RecordDuration(ctx, "client", "Ping", time.Since(start).Seconds())
+	}()
 
 	if err := c.rdb.Ping(ctx).Err(); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, string(apperrors.ErrRedisUnavailable))
-
 		appErr := apperrors.Redis("redis.Ping", err).Retryable()
-		contextlog.FromCtx(ctx, c.log).Error("redis ping failed", zap.Error(appErr))
+		infralog.Err(ctx, c.log, span, c.met, "client", "Ping", "redis ping failed", appErr)
 		return appErr
 	}
 	return nil
