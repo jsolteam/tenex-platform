@@ -32,8 +32,20 @@ type Client struct {
 	bucket string
 }
 
-func New(ctx context.Context, cfg Config, log *core.Logger, tracer tracing.Tracer) (*Client, error) {
-	met, _ := metrics.NewS3Metrics(metrics.NewNoop())
+func New(
+	ctx context.Context,
+	cfg Config,
+	log *core.Logger,
+	tracer tracing.Tracer,
+	metOpt ...*metrics.S3Metrics,
+) (*Client, error) {
+	var met *metrics.S3Metrics
+	if len(metOpt) > 0 {
+		met = metOpt[0]
+	}
+	if met == nil {
+		met, _ = metrics.NewS3Metrics(metrics.NewNoop())
+	}
 
 	mc, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.Key, cfg.Secret, ""),

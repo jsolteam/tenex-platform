@@ -20,7 +20,7 @@ func main() {
 	tracingComp := components.NewTracing(cfgComp)
 	dbComp := components.NewDB(cfgComp)
 	redisComp := components.NewRedis(cfgComp, tracingComp, metricsComp)
-	s3Comp := components.NewS3(cfgComp, tracingComp)
+	s3Comp := components.NewS3(cfgComp, tracingComp, metricsComp)
 	reposComp := components.NewRepositories(dbComp, tracingComp, metricsComp)
 	workerSvcComp := components.NewWorkerService(reposComp, redisComp, s3Comp)
 
